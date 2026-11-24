@@ -11,6 +11,7 @@ import { parseProjectForm, PROJECT_MEDIA_LIMITS } from '@/lib/services/projects'
 import { findBlock, parseBlockForm } from '@/content/blocks';
 import { parseBrandForm } from '@/lib/services/brands';
 import { parseServiceForm } from '@/lib/services/service-catalog';
+import { parsePostForm } from '@/lib/services/blog';
 import { SERVICES } from '@/content/segments';
 
 export async function loginAction(_: unknown, fd: FormData) {
@@ -385,4 +386,54 @@ export async function deleteServiceAction(slug: string, _: unknown, _fd: FormDat
   revalidateServices(slug);
   const base = SERVICES.some((s) => s.slug === slug);
   redirect(base ? `/admin/servicios/${slug}?restaurado=1` : `/admin/servicios?eliminado=${encodeURIComponent(row.name)}`);
+}
+
+// ---------------------------------------------------------------- Blog
+function revalidateBlog(...slugs: string[]) {
+  revalidatePath('/blog'); revalidatePath('/sitemap.xml'); revalidatePath('/admin/blog');
+  for (const s of new Set(slugs)) revalidatePath(`/blog/${s}`);
+}
+
+export async function savePostAction(_: unknown, fd: FormData): Promise<{ error?: string }> {
+  const staff = await requireStaff('blog');
+  const parsed = parsePostForm(fd);
+  if ('error' in parsed) return { error: parsed.error };
+  const input = parsed.data;
+  const store = getStore();
+  const prev = input.id ? await store.getPostRecord(input.id) : null;
+  if (input.id && !prev) return { error: 'Artículo no encontrado.' };
+  if (input.cover_id && input.cover_id !== prev?.cover?.id) return { error: 'La imagen cambió mientras editabas. Recarga la página.' };
+  const coverFile = files(fd.getAll('new_cover'))[0];
+  const c = await checkedImages(coverFile ? [coverFile] : []);
+  if (typeof c === 'string') return { error: c };
+  let id: string;
+  try {
+    if (c[0]) input.cover_id = (await store.uploadMedia({ bytes: c[0].bytes, mime: c[0].t.mime, ext: c[0].t.ext, kind: 'image', folder: 'blog', alt: input.title })).id;
+    id = await store.savePost(input, { id: staff.id, name: staff.full_name });
+  } catch (e) { return { error: (e as Error).message }; }
+  revalidateBlog(input.slug, ...(prev ? [prev.slug] : []));
+  redirect(`/admin/blog/${id}?guardado=1`);
+}
+
+export async function deletePostAction(id: string, _: unknown, _fd: FormData): Promise<{ error?: string }> {
+  await requireStaff('blog');
+  const prev = await getStore().getPostRecord(id);
+  if (!prev) return { error: 'Artículo no encontrado.' };
+  try { await getStore().deletePost(id); } catch (e) { return { error: (e as Error).message }; }
+  revalidateBlog(prev.slug);
+  redirect(`/admin/blog?eliminado=${encodeURIComponent(prev.title)}`);
+}
+
+/** Imagen dentro del artículo: se sube y se devuelve su URL para insertarla en el Markdown. */
+export async function uploadPostImageAction(fd: FormData): Promise<{ url?: string; error?: string }> {
+  await requireStaff('blog');
+  const f = files(fd.getAll('image'))[0];
+  if (!f) return { error: 'Elige una imagen.' };
+  const c = await checkedImages([f]);
+  if (typeof c === 'string') return { error: c };
+  try {
+    const alt = String(fd.get('alt') ?? '').slice(0, 140) || null;
+    const m = await getStore().uploadMedia({ bytes: c[0].bytes, mime: c[0].t.mime, ext: c[0].t.ext, kind: 'image', folder: 'blog', alt });
+    return { url: m.url };
+  } catch (e) { return { error: (e as Error).message }; }
 }

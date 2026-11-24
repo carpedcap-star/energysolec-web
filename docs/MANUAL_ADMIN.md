@@ -91,9 +91,20 @@ Campos clave: `pricing.pvTiers` (USD/kWp sin IVA por tramo), `pricing.batteryUsd
 - Los servicios base tienen URL fija; «Restaurar versión base» descarta lo guardado. Desmarca «Publicado» para ocultar un servicio.
 - El **resumen** se usa en el listado y como descripción para buscadores.
 
+## Blog
+
+**/admin/blog** (roles *superadmin* y *marketing*): artículos con categoría, portada, extracto y metadatos para buscadores.
+
+- El texto se escribe en **Markdown** con la barra de formato (negrita, cursiva, títulos de sección, listas, citas, enlaces e imágenes). La pestaña **Vista previa** muestra cómo se verá.
+- **Insertar imagen** sube la foto y pide su descripción (texto alternativo y pie de foto).
+- Los enlaces deben ser https, correo (mailto:), teléfono (tel:) o rutas del sitio (/calculadora). Otros se muestran como texto.
+- **Publicar** sin fecha publica al guardar; con una fecha futura el artículo queda **programado** y aparece solo en esa fecha (hora de Ecuador).
+- Título y descripción para buscadores son opcionales (60 y 160 caracteres); la vista previa muestra cómo se verá en Google.
+- Cifras, normas y tarifas siempre con su fuente (regla «Nada inventado»).
+
 ## Usuarios
 
-Hasta que se entreguen las pantallas de la fase 2, se gestionan desde **Supabase Studio → Table Editor** (tablas `blog_posts`, `profiles`) y **Storage → public-media** para imágenes y fichas técnicas. Reglas que la base de datos hace cumplir:
+Hasta que se entreguen las pantallas de la fase 2, se gestionan desde **Supabase Studio → Table Editor** (tabla `profiles`) y **Storage → public-media** para imágenes y fichas técnicas. Reglas que la base de datos hace cumplir:
 
 - Un producto con `is_placeholder = true` no puede publicarse.
 - Un proyecto muestra el cliente solo con `client_name_authorized`, la ubicación en el mapa solo con `location_authorized`, el ahorro solo con `financials_authorized` y el testimonio solo con `testimonial_verified` (vista `projects_public`; la clave pública no puede leer esas columnas de la tabla).

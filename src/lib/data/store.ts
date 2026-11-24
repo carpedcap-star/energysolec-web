@@ -6,12 +6,13 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { CalcParams, DEFAULT_PARAMS } from '../engine/params';
 import { DEFAULT_TARIFFS } from '../engine/default-tariffs';
 import type { Tariff } from '../engine/tariff';
-import type { Activity, Brand, BrandAssetKind, BrandInput, BrandRecord, Consent, ContentBlockRow, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, ServiceInput, ServiceRow, Stat, Study, TierPrice, MediaBucket } from './types';
+import type { Activity, BlogPost, BlogPostInput, BlogPostRecord, Brand, BrandAssetKind, BrandInput, BrandRecord, Consent, ContentBlockRow, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, ServiceInput, ServiceRow, Stat, Study, TierPrice, MediaBucket } from './types';
 import { PAID_STATES } from './types';
 import { SEED_BRANDS, SEED_PRODUCTS, SEED_PROJECTS, SEED_STATS } from './seed';
 import { effectivePrice } from '../services/catalog';
 import { toPublicProject } from '../services/projects';
 import { toPublicBrand } from '../services/brands';
+import { isLive, toPublicPost } from '../services/blog';
 
 /**
  * Capa de acceso a datos del servidor. Dos implementaciones con la misma interfaz:
@@ -71,6 +72,15 @@ export interface Store {
   saveBrand(b: BrandInput): Promise<string>;
   /** Lanza Error si hay productos de la marca. */
   deleteBrand(id: string): Promise<void>;
+  // ---- Blog
+  /** Solo publicados con fecha cumplida, del más reciente al más antiguo. */
+  listPublishedPosts(): Promise<BlogPost[]>;
+  getPublishedPost(slug: string): Promise<BlogPost | null>;
+  listPostRecords(): Promise<BlogPostRecord[]>;
+  getPostRecord(id: string): Promise<BlogPostRecord | null>;
+  /** El autor se fija al crear; al editar se conserva. */
+  savePost(p: BlogPostInput, author: { id: string; name: string }): Promise<string>;
+  deletePost(id: string): Promise<void>;
   // ---- Servicios (filas de la tabla; el catálogo base se combina en services/service-catalog.ts)
   listServiceRows(): Promise<ServiceRow[]>;
   saveService(s: ServiceInput): Promise<string>;
@@ -103,7 +113,9 @@ type DevDb = {
   media: { id: string; bucket: string; path: string; kind: 'image' | 'document'; alt: string | null; created_at: string }[];
   content_blocks: ContentBlockRow[];
   services: DevService[];
+  posts: DevPost[];
 };
+type DevPost = Omit<BlogPostRecord, 'cover'> & { cover_id: string | null };
 type DevAsset = { id: string; kind: BrandAssetKind; title: string; media_id: string | null; url: string | null };
 /** Marca en el archivo local: medios por id; archivos anteriores no traen los campos nuevos. */
 type DevBrand = Omit<BrandRecord, 'logo' | 'relationship_doc' | 'assets' | 'relationship_valid_until' | 'sort'> & {
@@ -147,6 +159,11 @@ function devBrandRecord(db: DevDb, b: DevBrand): BrandRecord {
     assets: (b.asset_rows ?? []).map((a) => ({ id: a.id, kind: a.kind, title: a.title, url: a.url, media: a.media_id ? devMediaRef(db, a.media_id) : null })),
   };
 }
+const devPostRecord = (db: DevDb, p: DevPost): BlogPostRecord => {
+  const { cover_id, ...rest } = p;
+  return { ...rest, cover: cover_id ? devMediaRef(db, cover_id) : null };
+};
+const byDateDesc = (a: { published_at: string | null }, b: { published_at: string | null }) => (b.published_at ?? '').localeCompare(a.published_at ?? '');
 const devServiceRow = (db: DevDb, s: DevService): ServiceRow => {
   const { cover_id, ...rest } = s;
   return { ...rest, cover: cover_id ? devMediaRef(db, cover_id) : null };
@@ -182,10 +199,10 @@ async function devLoad(): Promise<DevDb> {
   try { raw = readFileSync(DEV_FILE, 'utf8'); }
   catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
   // Solo se crea una base nueva si el archivo no existe: un JSON dañado se reporta, nunca se sobrescribe con la semilla.
-  if (raw != null) { devCache = JSON.parse(raw) as DevDb; devCache.media ??= []; devCache.content_blocks ??= []; devCache.services ??= []; }
+  if (raw != null) { devCache = JSON.parse(raw) as DevDb; devCache.media ??= []; devCache.content_blocks ??= []; devCache.services ??= []; devCache.posts ??= []; }
   else {
     devCache = { params: [{ ...DEFAULT_PARAMS, version: 1 }], tariffs: DEFAULT_TARIFFS.map((t) => ({ ...t, id: randomUUID() })), studies: [], leads: [], activities: [], consents: [],
-      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [] };
+      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [], posts: [] };
     await devSave();
   }
   return devCache!;
@@ -340,6 +357,21 @@ const devStore: Store = {
     if (db.products.some((p) => p.brand_id === id)) throw new Error('Hay productos de esta marca: cámbiales la marca o despublica la marca en lugar de eliminarla.');
     db.brands = db.brands.filter((b) => b.id !== id);
   }),
+  listPublishedPosts: () => tx((db) => db.posts.filter((p) => isLive(p)).sort(byDateDesc).map((p) => toPublicPost(devPostRecord(db, p)))),
+  getPublishedPost: (slug) => tx((db) => { const p = db.posts.find((x) => x.slug === slug && isLive(x)); return p ? toPublicPost(devPostRecord(db, p)) : null; }),
+  listPostRecords: () => tx((db) => db.posts.map((p) => devPostRecord(db, p)).sort((a, b) => Number(a.published) - Number(b.published) || byDateDesc(a, b))),
+  getPostRecord: (id) => tx((db) => { const p = db.posts.find((x) => x.id === id); return p ? devPostRecord(db, p) : null; }),
+  savePost: (input, author) => tx((db) => {
+    if (db.posts.some((x) => x.id !== input.id && x.slug === input.slug)) throw new Error(`Ya existe otro artículo con la URL /blog/${input.slug}.`);
+    if (input.cover_id && !db.media.some((m) => m.id === input.cover_id)) throw new Error('La imagen ya no existe. Vuelve a cargarla.');
+    const { id, ...rest } = input;
+    const prev = id ? db.posts.find((x) => x.id === id) : undefined;
+    if (id && !prev) throw new Error('Artículo no encontrado.');
+    const row: DevPost = { ...rest, id: id ?? randomUUID(), author_id: prev ? prev.author_id : author.id, author: prev ? prev.author : author.name };
+    if (prev) db.posts[db.posts.indexOf(prev)] = row; else db.posts.push(row);
+    return row.id;
+  }),
+  deletePost: (id) => tx((db) => { db.posts = db.posts.filter((p) => p.id !== id); }),
   listServiceRows: () => tx((db) => db.services.map((s) => devServiceRow(db, s))),
   saveService: (input) => tx((db) => {
     if (db.services.some((x) => x.id !== input.id && x.slug === input.slug)) throw new Error(`Ya existe otro servicio con la URL /servicios/${input.slug}.`);
@@ -412,6 +444,15 @@ const mapRecord = (p: any, media: Map<string, MediaRef>): ProductRecord => ({
   datasheet: p.datasheet ? media.get(p.datasheet) ?? null : null,
 });
 async function mapProducts(rows: any[]) { const m = await mediaMap(mediaIdsOf(rows)); return rows.map((r) => mapProduct(r, m)); }
+const POST_SELECT = 'id, slug, title, excerpt, body_md, category, cover, author_id, published, published_at, seo_title, seo_description, profiles(full_name)';
+async function mapPostRecords(rows: any[]): Promise<BlogPostRecord[]> {
+  const media = await mediaMap(rows.map((r) => r.cover).filter(Boolean));
+  return rows.map((r) => ({
+    id: r.id, slug: r.slug, title: r.title, excerpt: r.excerpt ?? null, body_md: r.body_md, category: r.category,
+    cover: r.cover ? media.get(r.cover) ?? null : null, author_id: r.author_id ?? null, author: r.profiles?.full_name ?? null,
+    published: r.published, published_at: r.published_at ?? null, seo_title: r.seo_title ?? null, seo_description: r.seo_description ?? null,
+  }));
+}
 const BRAND_SELECT = '*, brand_assets(id, kind, title, media_id, url, sort)';
 async function mapBrandRecords(rows: any[]): Promise<BrandRecord[]> {
   const media = await mediaMap(rows.flatMap((b) => [b.logo, b.relationship_doc, ...((b.brand_assets ?? []) as any[]).map((a) => a.media_id)]).filter(Boolean));
@@ -672,6 +713,30 @@ const supabaseStore: Store = {
     return bid;
   },
   async deleteBrand(id) { const r = await sb().from('brands').delete().eq('id', id); if (r.error) throw brandDbError(r.error); },
+  async listPublishedPosts() {
+    const rows = must(await sb().from('blog_posts').select(POST_SELECT).eq('published', true).lte('published_at', new Date().toISOString()).order('published_at', { ascending: false }).limit(500)) as any[];
+    return (await mapPostRecords(rows)).map(toPublicPost);
+  },
+  async getPublishedPost(slug) {
+    const r = must(await sb().from('blog_posts').select(POST_SELECT).eq('slug', slug).eq('published', true).lte('published_at', new Date().toISOString()).maybeSingle());
+    return r ? toPublicPost((await mapPostRecords([r]))[0]) : null;
+  },
+  async listPostRecords() { return mapPostRecords(must(await sb().from('blog_posts').select(POST_SELECT).order('published_at', { ascending: false, nullsFirst: true })) as any[]); },
+  async getPostRecord(id) {
+    if (!isUuid(id)) return null;
+    const r = must(await sb().from('blog_posts').select(POST_SELECT).eq('id', id).maybeSingle());
+    return r ? (await mapPostRecords([r]))[0] : null;
+  },
+  async savePost(input, author) {
+    const c = sb();
+    const { id, cover_id, ...rest } = input;
+    const row = { ...rest, cover: cover_id, ...(id ? {} : { author_id: isUuid(author.id) ? author.id : null }) };
+    const r = id ? await c.from('blog_posts').update(row).eq('id', id).select('id').maybeSingle() : await c.from('blog_posts').insert(row).select('id').single();
+    if (r.error) throw new Error(r.error.code === '23505' ? 'Ya existe otro artículo con esa URL.' : r.error.message);
+    if (!r.data) throw new Error('Artículo no encontrado.');
+    return (r.data as { id: string }).id;
+  },
+  async deletePost(id) { must(await sb().from('blog_posts').delete().eq('id', id)); },
   async listServiceRows() {
     const rows = must(await sb().from('services').select('*').order('sort')) as any[];
     const media = await mediaMap(rows.map((r) => r.cover).filter(Boolean));

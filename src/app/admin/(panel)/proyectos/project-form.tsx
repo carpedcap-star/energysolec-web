@@ -209,7 +209,7 @@ export function ProjectForm({ project: p }: { project: ProjectRecord | null }) {
               </div>
             </div>
           ) : <p className="text-sm text-muted">Sin portada.</p>}
-          <div className="min-w-0 flex-1">
+          <div className="min-w-[14rem] flex-1">
             <label htmlFor={f('cover')} className="label">{cover || newCover ? 'Reemplazar portada' : 'Cargar portada'}</label>
             <input id={f('cover')} type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => {
               const file = e.target.files?.[0]; e.target.value = '';

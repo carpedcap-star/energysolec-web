@@ -69,7 +69,7 @@ export function BrandForm({ brand: b }: { brand: BrandRecord | null }) {
               </div>
             ) : <p className="text-sm text-muted">Sin logo: se muestra el nombre.</p>}
             {(newLogo || logo) && <IconBtn label={newLogo ? 'Descartar el logo nuevo' : 'Quitar el logo'} onClick={() => { if (newLogo) { URL.revokeObjectURL(newLogo.url); setNewLogo(null); } else setLogo(null); }}>✕</IconBtn>}
-            <div className="min-w-0 flex-1">
+            <div className="min-w-[14rem] flex-1">
               <label htmlFor={f('logo')} className="label">{logo || newLogo ? 'Reemplazar logo' : 'Cargar logo'}</label>
               <input id={f('logo')} type="file" accept="image/png,image/jpeg,image/webp" className={FILE_INPUT} aria-describedby={f('logo-hint')} onChange={(e) => {
                 const x = e.target.files?.[0]; e.target.value = '';

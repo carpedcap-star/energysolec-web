@@ -137,3 +137,13 @@ export type Activity = { id: string; lead_id: string; kind: string; body: string
 
 /** Fila de `content_blocks`. `data` se valida y combina con el texto base al leerla (src/content/blocks.ts). */
 export type ContentBlockRow = { page: string; slot: string; data: unknown; is_placeholder: boolean; published: boolean; updated_at: string | null };
+
+/** Artículo del blog para lo público (solo publicados con fecha cumplida). */
+export type BlogPost = {
+  slug: string; title: string; excerpt: string; body_md: string; category: string; cover: string | null;
+  author: string | null; published_at: string; seo_title: string | null; seo_description: string | null;
+};
+export type BlogPostRecord = Omit<BlogPost, 'cover' | 'published_at' | 'excerpt'> & {
+  id: string; excerpt: string | null; cover: MediaRef | null; published: boolean; published_at: string | null; author_id: string | null;
+};
+export type BlogPostInput = Omit<BlogPostRecord, 'id' | 'cover' | 'author' | 'author_id'> & { id?: string; cover_id: string | null };

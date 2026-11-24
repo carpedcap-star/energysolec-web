@@ -80,7 +80,7 @@ export function ServiceForm({ service: s }: { service: ServiceRecord | null }) {
               </div>
             </div>
           ) : <p className="text-sm text-muted">Sin imagen.</p>}
-          <div className="min-w-0 flex-1">
+          <div className="min-w-[14rem] flex-1">
             <label htmlFor={f('cover')} className="label">{cover || newCover ? 'Reemplazar imagen' : 'Cargar imagen'}</label>
             <input id={f('cover')} type="file" accept="image/jpeg,image/png,image/webp" className={FILE_INPUT} onChange={(e) => {
               const x = e.target.files?.[0]; e.target.value = '';
