@@ -29,13 +29,13 @@ Next.js 15 App Router · TypeScript estricto · Tailwind 3 · Supabase (Postgres
 - `src/lib/auth.ts` — `PERMS` (matriz de roles), `requireStaff(perm)`. Debe mantenerse en espejo con la RLS de `supabase/migrations/0002_rls.sql`.
 - `src/app/api/*` — escrituras públicas: validar con Zod (`src/lib/schemas.ts`), `guard()` para el límite de solicitudes, `verifyHuman()` para el anti-spam.
 - `src/app/admin/actions.ts` — server actions del panel; cada una empieza con `requireStaff`.
-- `supabase/migrations/` — nunca edites una migración ya aplicada en producción; crea la siguiente (`0004_*.sql`).
+- `supabase/migrations/` — nunca edites una migración ya aplicada en producción; crea la siguiente (`0005_*.sql`).
 - Modo desarrollo: React 19 envía al navegador el valor de cada E/S asíncrona que espera un componente de servidor (para DevTools). Por eso el almacén local lee su archivo con `readFileSync`. En producción no ocurre, pero no conectes `next dev` a datos reales sensibles.
 - `src/content/segments.ts` — textos base de las unidades de negocio y la lista de servicios. `src/content/blocks.ts` — bloques editables desde el panel y su texto base.
 
 ## Reglas de negocio NO negociables
 
-1. **Nada inventado.** No se publican estadísticas, precios, productos, testimonios, certificaciones ni relaciones con marcas sin respaldo. El contenido provisional se marca de forma visible (`placeholder-badge`, `is_placeholder`).
+1. **Nada inventado.** No se publican estadísticas, precios, productos, testimonios, certificaciones ni relaciones con marcas sin respaldo. El contenido provisional se marca de forma visible (`placeholder-badge`, `is_placeholder`). Los documentos de respaldo (contratos, cartas de fabricantes) van al bucket privado `private-docs`, nunca a `public-media`.
 2. Indicadores de portada: solo `verified=true` y con `source_note`.
 3. Proyectos: nombre del cliente, ubicación en el mapa y cifras financieras solo con sus banderas `*_authorized`; el testimonio solo con `testimonial_verified`. Todo lo público sale por `toPublicProject` (y en la base, por la vista `projects_public`): nunca envíes un `ProjectRecord` a un componente público.
 4. Calculadora:
@@ -76,7 +76,7 @@ Next.js 15 App Router · TypeScript estricto · Tailwind 3 · Supabase (Postgres
 1. ✅ Panel: CRUD de productos, con precios por nivel, inventario, imágenes y ficha técnica en el bucket `public-media` (`/admin/productos`; lógica pura y pruebas en `src/lib/services/catalog.ts`; en desarrollo los archivos van a `.data/media/` y se sirven por `/api/dev-media`).
 2. ✅ Panel: CRUD de proyectos, con galería, banderas de autorización y coordenadas para el mapa (`/admin/proyectos`; enmascarado y validación en `src/lib/services/projects.ts`; migración `0003_project_privacy.sql`).
 3. ✅ Panel: bloques de contenido (`/admin/contenido`). Registro de bloques, campos y texto base en `src/content/blocks.ts`; las páginas leen con `getBlock(page, slot)` (`src/lib/content.ts`), que cae al texto base campo a campo. Para un bloque nuevo: regístralo en `BLOCKS` y léelo con `getBlock`; la prueba exige que su texto base sea válido.
-4. Panel: marcas (con documento de respaldo), servicios, blog, usuarios y roles, identidad gráfica (`site_settings.brand` → variables CSS).
+4. Panel: ✅ marcas (`/admin/marcas`: relación comercial solo con respaldo verificado y vigente vía `toPublicBrand`; respaldo en el bucket privado `private-docs`, servido por `/admin/documentos/[id]`; migración `0004_brand_backing.sql`) · ✅ servicios (`/admin/servicios`: catálogo base de `src/content/segments.ts` + tabla `services`, en `src/lib/services/service-catalog.ts`) · pendiente: blog, usuarios y roles, identidad gráfica (`site_settings.brand` → variables CSS).
 5. Formularios guiados por campo para parámetros y tarifas (hoy son editores JSON validados con Zod).
 6. Carga de planilla en PDF o foto con extracción por IA y confirmación del cliente (`bill_uploads`, bucket `bills`).
 7. Cuentas de instaladores y distribuidores con precios diferenciados (`trade_accounts`, la RLS ya existe).

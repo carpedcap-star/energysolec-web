@@ -1,4 +1,4 @@
-import type { Brand, Product, ProjectRecord, Stat } from './types';
+import type { BrandRecord, Product, ProjectRecord, Stat } from './types';
 
 /**
  * Datos semilla. TODO está marcado como provisional:
@@ -29,11 +29,12 @@ export const SEED_PROJECTS: ProjectRecord[] = [
   projectStub('esheclabri', 'ESHECLABRI', 'industrial', 'Por definir'),
 ];
 
-export const SEED_BRANDS: Brand[] = [
+export const SEED_BRANDS: BrandRecord[] = [
   'KACO New Energy – Siemens', 'AE Solar', 'Huawei', 'SMA', 'Fronius', 'GoodWe', 'Deye', 'Pylontech', 'BYD', 'Suntree', 'ACESCO', 'Alurack',
 ].map((name, i) => ({
   id: `brand-${i}`, slug: name.toLowerCase().normalize('NFKD').replace(/[^\w]+/g, '-').replace(/-+$/, ''), name, logo: null, description: null,
   relationship: null, relationship_verified: false, published: true,
+  relationship_doc: null, relationship_valid_until: null, sort: i, assets: [],
 }));
 
 const ex = (n: number, p: Omit<Product, 'id' | 'is_placeholder' | 'published' | 'images' | 'datasheet_url' | 'certifications' | 'promo_price'> & Partial<Product>): Product => ({

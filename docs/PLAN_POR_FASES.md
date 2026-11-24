@@ -23,7 +23,8 @@
 - ✅ Panel de productos: CRUD con precios por nivel y promociones, inventario, imágenes y ficha técnica en `public-media` (`/admin/productos`).
 - ✅ Panel de proyectos: CRUD con portada y galería, banderas de autorización, coordenadas con vista previa en el mapa (`/admin/proyectos`) y migración `0003` de privacidad.
 - ✅ Panel de contenido: bloques editables con texto base, borrador/publicado e imágenes (`/admin/contenido`); portada, soluciones y «Nosotros» leen de ahí.
-- Pantallas del panel para marcas, servicios, blog con editor, usuarios y permisos, identidad gráfica e integraciones. Hoy se gestionan desde Supabase Studio.
+- ✅ Panel de marcas (relación comercial con respaldo privado y vigencia, documentos públicos; migración `0004`) y de servicios (catálogo base + contenido validado).
+- Pantallas del panel para blog con editor, usuarios y permisos, identidad gráfica e integraciones. Hoy se gestionan desde Supabase Studio.
 - Formularios guiados por campo para parámetros y tarifas (hoy editor JSON validado).
 - Carga de planilla eléctrica en PDF o foto con extracción por IA y confirmación del cliente (tabla y bucket ya creados).
 - Flujo industrial con carga de documentos (curva de carga, planos).

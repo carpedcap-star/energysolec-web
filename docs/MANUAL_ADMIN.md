@@ -73,11 +73,29 @@ Campos clave: `pricing.pvTiers` (USD/kWp sin IVA por tramo), `pricing.batteryUsd
 - No escribas cifras, certificaciones ni relaciones con marcas sin respaldo documental (regla «Nada inventado»).
 - La foto de fondo de la portada es opcional; sin ella se muestra el fondo gráfico.
 
-## Marcas y usuarios
+## Marcas
 
-Hasta que se entreguen las pantallas de la fase 2, se gestionan desde **Supabase Studio → Table Editor** (tablas `brands`, `services`, `blog_posts`, `profiles`) y **Storage → public-media** para imágenes y fichas técnicas. Reglas que la base de datos hace cumplir:
+**/admin/marcas** (roles *superadmin*, *marketing* y *compras*): logo, descripción, relación comercial y documentos públicos de cada fabricante.
+
+- La **relación comercial** («Distribuidor autorizado»…) solo se publica si está **verificada**, tiene **documento de respaldo** y no venció («Vigente hasta»). El panel indica en vivo si se publicará y por qué no.
+- El documento de respaldo queda en almacenamiento **privado**: solo lo abren superadmin, gerencia, marketing y compras desde el panel.
+- **Documentos públicos**: fichas técnicas, certificados, garantías y catálogos (PDF) o enlaces https (videos). Se muestran en /marcas.
+- Logos en PNG, JPG o WebP (SVG no se acepta por seguridad). Mostrar una marca no afirma ninguna relación comercial.
+- Una marca con productos no se elimina: cambia la marca de esos productos o deja la marca oculta.
+
+## Servicios
+
+**/admin/servicios** (roles *superadmin* y *marketing*): los 15 servicios del catálogo base y los que agregues.
+
+- Un servicio sin **descripción** se muestra como «Contenido provisional». Usa información validada por Ingeniería.
+- Los servicios base tienen URL fija; «Restaurar versión base» descarta lo guardado. Desmarca «Publicado» para ocultar un servicio.
+- El **resumen** se usa en el listado y como descripción para buscadores.
+
+## Usuarios
+
+Hasta que se entreguen las pantallas de la fase 2, se gestionan desde **Supabase Studio → Table Editor** (tablas `blog_posts`, `profiles`) y **Storage → public-media** para imágenes y fichas técnicas. Reglas que la base de datos hace cumplir:
 
 - Un producto con `is_placeholder = true` no puede publicarse.
 - Un proyecto muestra el cliente solo con `client_name_authorized`, la ubicación en el mapa solo con `location_authorized`, el ahorro solo con `financials_authorized` y el testimonio solo con `testimonial_verified` (vista `projects_public`; la clave pública no puede leer esas columnas de la tabla).
-- Una marca muestra su relación comercial solo con `relationship_verified` y documento de respaldo.
+- Una marca muestra su relación comercial solo verificada, con documento de respaldo y vigente (vista `brands_public`; la clave pública no puede leer esas columnas de la tabla).
 - Todos los cambios quedan en `audit_log` con el usuario y los valores anteriores.

@@ -6,11 +6,12 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { CalcParams, DEFAULT_PARAMS } from '../engine/params';
 import { DEFAULT_TARIFFS } from '../engine/default-tariffs';
 import type { Tariff } from '../engine/tariff';
-import type { Activity, Brand, Consent, ContentBlockRow, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, Stat, Study, TierPrice } from './types';
+import type { Activity, Brand, BrandAssetKind, BrandInput, BrandRecord, Consent, ContentBlockRow, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, ServiceInput, ServiceRow, Stat, Study, TierPrice, MediaBucket } from './types';
 import { PAID_STATES } from './types';
 import { SEED_BRANDS, SEED_PRODUCTS, SEED_PROJECTS, SEED_STATS } from './seed';
 import { effectivePrice } from '../services/catalog';
 import { toPublicProject } from '../services/projects';
+import { toPublicBrand } from '../services/brands';
 
 /**
  * Capa de acceso a datos del servidor. Dos implementaciones con la misma interfaz:
@@ -45,7 +46,9 @@ export interface Store {
   /** Lanza Error si el producto figura en pedidos: en ese caso se despublica, no se elimina. */
   deleteProduct(id: string): Promise<void>;
   /** Sube un archivo ya validado al bucket public-media y lo registra en `media`. */
-  uploadMedia(f: { bytes: Uint8Array; mime: string; ext: string; kind: 'image' | 'document'; folder: string; alt: string | null }): Promise<MediaRef>;
+  uploadMedia(f: { bytes: Uint8Array; mime: string; ext: string; kind: 'image' | 'document'; folder: string; alt: string | null; bucket?: MediaBucket }): Promise<MediaRef>;
+  /** Documento del bucket privado (solo panel): bytes en desarrollo, URL firmada de corta duración en Supabase. */
+  getPrivateDocument(id: string): Promise<{ bytes: Uint8Array; mime: string; filename: string } | { signedUrl: string } | null>;
   createOrder(o: Omit<Order, 'id' | 'number' | 'created_at' | 'status' | 'payment_reference' | 'payment_verified_by' | 'payment_verified_at' | 'whatsapp_message'>): Promise<Order>;
   setOrderWhatsapp(id: string, msg: string, channel: 'cloud_api' | 'wa_link'): Promise<void>;
   listOrders(): Promise<Order[]>;
@@ -61,7 +64,17 @@ export interface Store {
   /** Crea o actualiza (si trae id). Devuelve el id. */
   saveProject(p: ProjectInput): Promise<string>;
   deleteProject(id: string): Promise<void>;
+  /** Marcas para lo público, SIEMPRE con toPublicBrand (relación solo con respaldo vigente). */
   listBrands(opts?: { includeUnpublished?: boolean }): Promise<Brand[]>;
+  listBrandRecords(): Promise<BrandRecord[]>;
+  getBrandRecord(id: string): Promise<BrandRecord | null>;
+  saveBrand(b: BrandInput): Promise<string>;
+  /** Lanza Error si hay productos de la marca. */
+  deleteBrand(id: string): Promise<void>;
+  // ---- Servicios (filas de la tabla; el catálogo base se combina en services/service-catalog.ts)
+  listServiceRows(): Promise<ServiceRow[]>;
+  saveService(s: ServiceInput): Promise<string>;
+  deleteService(id: string): Promise<void>;
   // ---- Bloques de contenido
   listContentBlocks(): Promise<ContentBlockRow[]>;
   /** Solo publicados, para las páginas públicas. */
@@ -85,11 +98,19 @@ const pad = (n: number) => String(n).padStart(6, '0');
 type DevDb = {
   params: CalcParams[]; tariffs: Tariff[]; studies: Study[]; leads: Lead[]; activities: Activity[];
   consents: (Consent & { email: string; at: string })[]; products: DevProduct[]; orders: Order[]; stats: Stat[];
-  projects: DevProject[]; brands: Brand[]; messages: unknown[]; events: { name: string; at: string; props?: unknown }[];
+  projects: DevProject[]; brands: DevBrand[]; messages: unknown[]; events: { name: string; at: string; props?: unknown }[];
   seq: { study: number; order: number }; rl: Record<string, { c: number; t: number }>;
   media: { id: string; bucket: string; path: string; kind: 'image' | 'document'; alt: string | null; created_at: string }[];
   content_blocks: ContentBlockRow[];
+  services: DevService[];
 };
+type DevAsset = { id: string; kind: BrandAssetKind; title: string; media_id: string | null; url: string | null };
+/** Marca en el archivo local: medios por id; archivos anteriores no traen los campos nuevos. */
+type DevBrand = Omit<BrandRecord, 'logo' | 'relationship_doc' | 'assets' | 'relationship_valid_until' | 'sort'> & {
+  logo?: unknown; logo_id?: string | null; relationship_doc_id?: string | null; relationship_valid_until?: string | null; sort?: number; assets?: unknown;
+  asset_rows?: DevAsset[];
+};
+type DevService = Omit<ServiceRow, 'cover'> & { cover_id: string | null };
 /** Proyecto en el archivo local: medios por id; las banderas faltan en archivos anteriores y valen false. */
 type DevProject = Omit<ProjectRecord, 'cover' | 'gallery' | 'client_name_authorized' | 'financials_authorized' | 'testimonial_verified' | 'updated_at'>
   & Partial<Pick<ProjectRecord, 'client_name_authorized' | 'financials_authorized' | 'testimonial_verified' | 'updated_at'>>
@@ -106,12 +127,29 @@ function devProjectRecord(db: DevDb, p: DevProject): ProjectRecord {
 /** En el archivo local el producto guarda los precios por nivel y los ids de medios; `price`, `images`, etc. se derivan al leer. */
 type DevProduct = Product & { brand_id?: string | null; prices?: TierPrice[]; image_ids?: string[]; datasheet_id?: string | null; updated_at?: string | null };
 const DEV_MEDIA_DIR = path.join(process.cwd(), '.data', 'media');
+/** Archivos privados de desarrollo: fuera de .data/media, nunca servidos por /api/dev-media. */
+const DEV_PRIVATE_DIR = path.join(process.cwd(), '.data', 'private');
+/** Ruta protegida del panel para documentos privados (requiere sesión con permiso). */
+export const privateDocUrl = (id: string) => `/admin/documentos/${id}`;
 export const devMediaFile = (rel: string) => path.join(DEV_MEDIA_DIR, rel);
 const devMediaUrl = (rel: string) => `/api/dev-media/${rel}`;
 const devPrices = (p: DevProduct): TierPrice[] => p.prices ?? [{ tier: 'final', price: p.price, promo_price: p.promo_price, promo_until: null }];
 const devMediaRef = (db: DevDb, id: string): MediaRef | null => {
   const m = db.media.find((x) => x.id === id);
-  return m ? { id: m.id, path: m.path, url: devMediaUrl(m.path), alt: m.alt } : null;
+  return m ? { id: m.id, path: m.path, url: m.bucket === 'private-docs' ? privateDocUrl(m.id) : devMediaUrl(m.path), alt: m.alt } : null;
+};
+function devBrandRecord(db: DevDb, b: DevBrand): BrandRecord {
+  return {
+    id: b.id, slug: b.slug, name: b.name, description: b.description, relationship: b.relationship, relationship_verified: b.relationship_verified,
+    published: b.published, sort: b.sort ?? 0, relationship_valid_until: b.relationship_valid_until ?? null,
+    logo: b.logo_id ? devMediaRef(db, b.logo_id) : null,
+    relationship_doc: b.relationship_doc_id ? devMediaRef(db, b.relationship_doc_id) : null,
+    assets: (b.asset_rows ?? []).map((a) => ({ id: a.id, kind: a.kind, title: a.title, url: a.url, media: a.media_id ? devMediaRef(db, a.media_id) : null })),
+  };
+}
+const devServiceRow = (db: DevDb, s: DevService): ServiceRow => {
+  const { cover_id, ...rest } = s;
+  return { ...rest, cover: cover_id ? devMediaRef(db, cover_id) : null };
 };
 const devBrandName = (db: DevDb, p: DevProduct) => (p.brand_id !== undefined ? (p.brand_id ? db.brands.find((b) => b.id === p.brand_id)?.name ?? null : null) : p.brand);
 function devPublic(db: DevDb, p: DevProduct): Product {
@@ -144,10 +182,10 @@ async function devLoad(): Promise<DevDb> {
   try { raw = readFileSync(DEV_FILE, 'utf8'); }
   catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
   // Solo se crea una base nueva si el archivo no existe: un JSON dañado se reporta, nunca se sobrescribe con la semilla.
-  if (raw != null) { devCache = JSON.parse(raw) as DevDb; devCache.media ??= []; devCache.content_blocks ??= []; }
+  if (raw != null) { devCache = JSON.parse(raw) as DevDb; devCache.media ??= []; devCache.content_blocks ??= []; devCache.services ??= []; }
   else {
     devCache = { params: [{ ...DEFAULT_PARAMS, version: 1 }], tariffs: DEFAULT_TARIFFS.map((t) => ({ ...t, id: randomUUID() })), studies: [], leads: [], activities: [], consents: [],
-      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [] };
+      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [] };
     await devSave();
   }
   return devCache!;
@@ -229,14 +267,24 @@ const devStore: Store = {
     db.products = db.products.filter((p) => p.id !== id);
   }),
   uploadMedia: async (f) => {
+    const bucket = f.bucket ?? 'public-media';
     const rel = `${f.folder}/${randomUUID()}.${f.ext}`;
-    await fs.mkdir(path.dirname(devMediaFile(rel)), { recursive: true });
-    await fs.writeFile(devMediaFile(rel), f.bytes);
+    const file = path.join(bucket === 'private-docs' ? DEV_PRIVATE_DIR : DEV_MEDIA_DIR, rel);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, f.bytes);
     return tx((db) => {
-      const m = { id: randomUUID(), bucket: 'public-media', path: rel, kind: f.kind, alt: f.alt, created_at: new Date().toISOString() };
+      const m = { id: randomUUID(), bucket, path: rel, kind: f.kind, alt: f.alt, created_at: new Date().toISOString() };
       db.media.push(m);
-      return { id: m.id, path: rel, url: devMediaUrl(rel), alt: m.alt };
+      return devMediaRef(db, m.id)!;
     });
+  },
+  getPrivateDocument: async (id) => {
+    const m = await tx((db) => db.media.find((x) => x.id === id && x.bucket === 'private-docs') ?? null);
+    if (!m) return null;
+    try {
+      const bytes = new Uint8Array(await fs.readFile(path.join(DEV_PRIVATE_DIR, m.path)));
+      return { bytes, mime: m.path.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream', filename: path.basename(m.path) };
+    } catch { return null; }
   },
   createOrder: (o) => tx((db) => {
     const ord: Order = { ...o, id: randomUUID(), number: `ESE-P-${year()}-${pad(++db.seq.order)}`, status: 'nuevo', payment_reference: null,
@@ -272,7 +320,38 @@ const devStore: Store = {
     return row.id;
   }),
   deleteProject: (id) => tx((db) => { db.projects = db.projects.filter((p) => p.id !== id); }),
-  listBrands: (o) => tx((db) => db.brands.filter((b) => o?.includeUnpublished || b.published)),
+  listBrands: (o) => tx((db) => db.brands.filter((b) => o?.includeUnpublished || b.published)
+    .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0)).map((b) => toPublicBrand(devBrandRecord(db, b)))),
+  listBrandRecords: () => tx((db) => db.brands.map((b) => devBrandRecord(db, b)).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, 'es'))),
+  getBrandRecord: (id) => tx((db) => { const b = db.brands.find((x) => x.id === id); return b ? devBrandRecord(db, b) : null; }),
+  saveBrand: (input) => tx((db) => {
+    if (db.brands.some((x) => x.id !== input.id && x.slug === input.slug)) throw new Error(`Ya existe otra marca con el identificador «${input.slug}».`);
+    const ids = [input.logo_id, input.relationship_doc_id, ...input.assets.map((a) => a.media_id)].filter((x): x is string => !!x);
+    for (const id of ids) if (!db.media.some((m) => m.id === id)) throw new Error('Uno de los archivos ya no existe. Vuelve a cargarlo.');
+    if (input.relationship_doc_id && db.media.find((m) => m.id === input.relationship_doc_id)?.bucket !== 'private-docs') throw new Error('El documento de respaldo debe estar en el almacenamiento privado.');
+    const { id, logo_id, relationship_doc_id, assets, ...rest } = input;
+    const prev = id ? db.brands.find((x) => x.id === id) : undefined;
+    if (id && !prev) throw new Error('Marca no encontrada.');
+    const row: DevBrand = { ...rest, id: id ?? randomUUID(), logo_id, relationship_doc_id, asset_rows: assets.map((a) => ({ ...a, id: a.id ?? randomUUID() })) };
+    if (prev) db.brands[db.brands.indexOf(prev)] = row; else db.brands.push(row);
+    return row.id;
+  }),
+  deleteBrand: (id) => tx((db) => {
+    if (db.products.some((p) => p.brand_id === id)) throw new Error('Hay productos de esta marca: cámbiales la marca o despublica la marca en lugar de eliminarla.');
+    db.brands = db.brands.filter((b) => b.id !== id);
+  }),
+  listServiceRows: () => tx((db) => db.services.map((s) => devServiceRow(db, s))),
+  saveService: (input) => tx((db) => {
+    if (db.services.some((x) => x.id !== input.id && x.slug === input.slug)) throw new Error(`Ya existe otro servicio con la URL /servicios/${input.slug}.`);
+    if (input.cover_id && !db.media.some((m) => m.id === input.cover_id)) throw new Error('La imagen ya no existe. Vuelve a cargarla.');
+    const { id, ...rest } = input;
+    const prev = id ? db.services.find((x) => x.id === id) : undefined;
+    if (id && !prev) throw new Error('Servicio no encontrado.');
+    const row: DevService = { ...rest, id: id ?? randomUUID() };
+    if (prev) db.services[db.services.indexOf(prev)] = row; else db.services.push(row);
+    return row.id;
+  }),
+  deleteService: (id) => tx((db) => { db.services = db.services.filter((s) => s.id !== id); }),
   listContentBlocks: () => tx((db) => db.content_blocks.map((b) => ({ ...b }))),
   getPublishedBlocks: (page) => tx((db) => db.content_blocks.filter((b) => b.page === page && b.published).map((b) => ({ ...b }))),
   saveContentBlock: (b) => tx((db) => {
@@ -303,12 +382,13 @@ function must<T>(r: { data: T | null; error: { message: string } | null }): T {
 }
 // products.images (uuid[]) y products.datasheet (uuid) apuntan a la tabla `media`; las URL públicas salen de su `path` en public-media.
 const PUBLIC_BUCKET = 'public-media';
+const PRIVATE_BUCKET = 'private-docs';
 const publicUrl = (p: string) => sb().storage.from(PUBLIC_BUCKET).getPublicUrl(p).data.publicUrl;
 async function mediaMap(ids: string[]): Promise<Map<string, MediaRef>> {
   const uniq = [...new Set(ids.filter(Boolean))];
   if (!uniq.length) return new Map();
-  const rows = must(await sb().from('media').select('id, path, alt').in('id', uniq)) as { id: string; path: string; alt: string | null }[];
-  return new Map(rows.map((r) => [r.id, { id: r.id, path: r.path, url: publicUrl(r.path), alt: r.alt }]));
+  const rows = must(await sb().from('media').select('id, bucket, path, alt').in('id', uniq)) as { id: string; bucket: string; path: string; alt: string | null }[];
+  return new Map(rows.map((r) => [r.id, { id: r.id, path: r.path, url: r.bucket === PRIVATE_BUCKET ? privateDocUrl(r.id) : publicUrl(r.path), alt: r.alt }]));
 }
 const mediaIdsOf = (rows: any[]) => rows.flatMap((p) => [...((p.images ?? []) as string[]), ...(p.datasheet ? [p.datasheet as string] : [])]);
 const tierPrices = (p: any): TierPrice[] => ((p.product_prices ?? []) as any[]).map((x) => ({
@@ -332,6 +412,25 @@ const mapRecord = (p: any, media: Map<string, MediaRef>): ProductRecord => ({
   datasheet: p.datasheet ? media.get(p.datasheet) ?? null : null,
 });
 async function mapProducts(rows: any[]) { const m = await mediaMap(mediaIdsOf(rows)); return rows.map((r) => mapProduct(r, m)); }
+const BRAND_SELECT = '*, brand_assets(id, kind, title, media_id, url, sort)';
+async function mapBrandRecords(rows: any[]): Promise<BrandRecord[]> {
+  const media = await mediaMap(rows.flatMap((b) => [b.logo, b.relationship_doc, ...((b.brand_assets ?? []) as any[]).map((a) => a.media_id)]).filter(Boolean));
+  return rows.map((b) => ({
+    id: b.id, slug: b.slug, name: b.name, description: b.description, relationship: b.relationship, relationship_verified: b.relationship_verified,
+    relationship_valid_until: b.relationship_valid_until ?? null, published: b.published, sort: b.sort ?? 0,
+    logo: b.logo ? media.get(b.logo) ?? null : null,
+    relationship_doc: b.relationship_doc ? media.get(b.relationship_doc) ?? null : null,
+    assets: ((b.brand_assets ?? []) as any[]).sort((x, y) => (x.sort ?? 0) - (y.sort ?? 0))
+      .map((a) => ({ id: a.id, kind: a.kind, title: a.title, url: a.url ?? null, media: a.media_id ? media.get(a.media_id) ?? null : null })),
+  }));
+}
+function brandDbError(e: { code?: string; message: string }): Error {
+  if (e.code === '23505') return new Error('Ya existe otra marca con ese identificador.');
+  if (e.code === '23503') return new Error('Hay productos de esta marca: cámbiales la marca o despublica la marca en lugar de eliminarla.');
+  if (e.code === '23514' && e.message.includes('relationship_verified_needs_backup')) return new Error('Para verificar la relación, indica el texto y carga el documento de respaldo.');
+  if (e.code === '23514' && e.message.includes('brand_asset')) return new Error('Cada documento necesita un archivo o un enlace https.');
+  return new Error(e.message);
+}
 const PROJECT_SELECT = '*, project_media(media_id, role, sort)';
 async function mapProjectRecords(rows: any[]): Promise<ProjectRecord[]> {
   const media = await mediaMap(rows.flatMap((p) => ((p.project_media ?? []) as any[]).map((m) => m.media_id as string)));
@@ -471,12 +570,21 @@ const supabaseStore: Store = {
   },
   async uploadMedia(f) {
     const c = sb();
+    const bucket = f.bucket ?? PUBLIC_BUCKET;
     const p = `${f.folder}/${randomUUID()}.${f.ext}`;
-    const up = await c.storage.from(PUBLIC_BUCKET).upload(p, f.bytes, { contentType: f.mime, upsert: false, cacheControl: '31536000' });
+    const up = await c.storage.from(bucket).upload(p, f.bytes, { contentType: f.mime, upsert: false, cacheControl: bucket === PUBLIC_BUCKET ? '31536000' : '0' });
     if (up.error) throw new Error(`No se pudo subir el archivo: ${up.error.message}`);
-    const m = await c.from('media').insert({ bucket: PUBLIC_BUCKET, path: p, kind: f.kind, alt: f.alt }).select('id').single();
-    if (m.error) { await c.storage.from(PUBLIC_BUCKET).remove([p]); throw new Error(m.error.message); }
-    return { id: (m.data as { id: string }).id, path: p, url: publicUrl(p), alt: f.alt };
+    const m = await c.from('media').insert({ bucket, path: p, kind: f.kind, alt: f.alt }).select('id').single();
+    if (m.error) { await c.storage.from(bucket).remove([p]); throw new Error(m.error.message); }
+    const id = (m.data as { id: string }).id;
+    return { id, path: p, url: bucket === PRIVATE_BUCKET ? privateDocUrl(id) : publicUrl(p), alt: f.alt };
+  },
+  async getPrivateDocument(id) {
+    if (!isUuid(id)) return null;
+    const m = must(await sb().from('media').select('path').eq('id', id).eq('bucket', PRIVATE_BUCKET).maybeSingle()) as { path: string } | null;
+    if (!m) return null;
+    const r = await sb().storage.from(PRIVATE_BUCKET).createSignedUrl(m.path, 60);
+    return r.error || !r.data ? null : { signedUrl: r.data.signedUrl };
   },
   async createOrder(o) {
     const c = sb();
@@ -536,10 +644,53 @@ const supabaseStore: Store = {
   async deleteContentBlock(page, slot) { must(await sb().from('content_blocks').delete().eq('page', page).eq('slot', slot)); },
   async resolveMedia(ids) { return Object.fromEntries((await mediaMap(ids)).entries()); },
   async listBrands(o) {
-    let q = sb().from('brands').select('*').order('sort');
+    let q = sb().from('brands').select(BRAND_SELECT).order('sort');
     if (!o?.includeUnpublished) q = q.eq('published', true);
-    return must(await q) as Brand[];
+    return (await mapBrandRecords(must(await q) as any[])).map((b) => toPublicBrand(b));
   },
+  async listBrandRecords() { return mapBrandRecords(must(await sb().from('brands').select(BRAND_SELECT).order('sort').order('name')) as any[]); },
+  async getBrandRecord(id) {
+    if (!isUuid(id)) return null;
+    const r = must(await sb().from('brands').select(BRAND_SELECT).eq('id', id).maybeSingle());
+    return r ? (await mapBrandRecords([r]))[0] : null;
+  },
+  async saveBrand(input) {
+    const c = sb();
+    const { id, logo_id, relationship_doc_id, assets, ...rest } = input;
+    const row = { ...rest, logo: logo_id, relationship_doc: relationship_doc_id };
+    const r = id ? await c.from('brands').update(row).eq('id', id).select('id').maybeSingle() : await c.from('brands').insert(row).select('id').single();
+    if (r.error) throw brandDbError(r.error);
+    if (!r.data) throw new Error('Marca no encontrada.');
+    const bid = (r.data as { id: string }).id;
+    // Documentos de la marca: se reemplaza el conjunto en el orden del formulario.
+    const del = await c.from('brand_assets').delete().eq('brand_id', bid);
+    if (del.error) throw brandDbError(del.error);
+    if (assets.length) {
+      const ins = await c.from('brand_assets').insert(assets.map((a, i) => ({ brand_id: bid, kind: a.kind, title: a.title, media_id: a.media_id, url: a.url, sort: i })));
+      if (ins.error) throw brandDbError(ins.error);
+    }
+    return bid;
+  },
+  async deleteBrand(id) { const r = await sb().from('brands').delete().eq('id', id); if (r.error) throw brandDbError(r.error); },
+  async listServiceRows() {
+    const rows = must(await sb().from('services').select('*').order('sort')) as any[];
+    const media = await mediaMap(rows.map((r) => r.cover).filter(Boolean));
+    return rows.map((r) => ({
+      id: r.id, slug: r.slug, name: r.name, summary: r.summary ?? null, description: r.body?.description ?? null,
+      benefits: r.body?.benefits ?? [], scope: r.body?.scope ?? [], segments: r.segments ?? [], published: r.published, sort: r.sort,
+      cover: r.cover ? media.get(r.cover) ?? null : null,
+    }));
+  },
+  async saveService(input) {
+    const c = sb();
+    const { id, cover_id, description, benefits, scope, ...rest } = input;
+    const row = { ...rest, cover: cover_id, body: { description, benefits, scope } };
+    const r = id ? await c.from('services').update(row).eq('id', id).select('id').maybeSingle() : await c.from('services').insert(row).select('id').single();
+    if (r.error) throw new Error(r.error.code === '23505' ? 'Ya existe otro servicio con esa URL.' : r.error.message);
+    if (!r.data) throw new Error('Servicio no encontrado.');
+    return (r.data as { id: string }).id;
+  },
+  async deleteService(id) { must(await sb().from('services').delete().eq('id', id)); },
   async getSetting(key, fallback) { const r = await sb().from('site_settings').select('value').eq('key', key).maybeSingle(); return (r.data?.value ?? fallback) as any; },
   async queueMessage(m) { await sb().from('outbound_messages').insert({ channel: m.channel, to_address: m.to, template: m.template, payload: m.payload, status: m.status, error: m.error }); },
   async track(name, props) { await sb().from('events').insert({ name, props, path: (props?.path as string) ?? null }); },

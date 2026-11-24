@@ -51,6 +51,7 @@ export const AVAILABILITY: { id: Availability; label: string }[] = [
 ];
 /** Archivo del bucket public-media registrado en la tabla `media`. */
 export type MediaRef = { id: string; path: string; url: string; alt: string | null };
+export type MediaBucket = 'public-media' | 'private-docs';
 
 /** Vista completa de un producto para el panel: todos los niveles de precio y los medios con su id. */
 export type ProductRecord = Omit<Product, 'price' | 'promo_price' | 'images' | 'datasheet_url'> & {
@@ -93,7 +94,43 @@ export type ProjectRecord = Omit<Project, 'cover' | 'gallery'> & {
 export type ProjectInput = Omit<ProjectRecord, 'id' | 'cover' | 'gallery' | 'updated_at' | 'is_placeholder'> & {
   id?: string; cover_id: string | null; gallery_ids: string[];
 };
-export type Brand = { id: string; slug: string; name: string; logo: string | null; description: string | null; relationship: string | null; relationship_verified: boolean; published: boolean };
+/**
+ * Marca para lo público: la relación comercial solo viene si está verificada, con respaldo y vigente
+ * (siempre pasar por `toPublicBrand`). `relationship_verified` indica si se muestra.
+ */
+export type Brand = {
+  id: string; slug: string; name: string; logo: string | null; description: string | null;
+  relationship: string | null; relationship_verified: boolean; published: boolean;
+  assets: { kind: BrandAssetKind; title: string; url: string }[];
+};
+export type BrandAssetKind = 'datasheet' | 'certificate' | 'warranty' | 'catalog' | 'video';
+export const BRAND_ASSET_KINDS: { id: BrandAssetKind; label: string }[] = [
+  { id: 'datasheet', label: 'Ficha técnica' }, { id: 'certificate', label: 'Certificado' }, { id: 'warranty', label: 'Garantía' },
+  { id: 'catalog', label: 'Catálogo' }, { id: 'video', label: 'Video' },
+];
+export type BrandAsset = { id: string; kind: BrandAssetKind; title: string; media: MediaRef | null; url: string | null };
+/** Marca completa para el panel. `relationship_doc` está en el bucket privado: su URL es la ruta protegida del panel. */
+export type BrandRecord = {
+  id: string; slug: string; name: string; logo: MediaRef | null; description: string | null;
+  relationship: string | null; relationship_verified: boolean; relationship_doc: MediaRef | null; relationship_valid_until: string | null;
+  published: boolean; sort: number; assets: BrandAsset[];
+};
+export type BrandInput = Omit<BrandRecord, 'id' | 'logo' | 'relationship_doc' | 'assets'> & {
+  id?: string; logo_id: string | null; relationship_doc_id: string | null;
+  assets: { id?: string; kind: BrandAssetKind; title: string; media_id: string | null; url: string | null }[];
+};
+
+/** Servicio público. `isPlaceholder`: aún sin descripción oficial (se marca de forma visible). */
+export type Service = {
+  slug: string; name: string; summary: string | null; description: string | null; benefits: string[]; scope: string[];
+  segments: Segment[]; cover: string | null; isPlaceholder: boolean;
+};
+/** Servicio en el panel: los del catálogo base existen aunque aún no tengan fila en la base (`id: null`). */
+export type ServiceRecord = Omit<Service, 'cover' | 'isPlaceholder'> & {
+  id: string | null; cover: MediaRef | null; published: boolean; sort: number; isBase: boolean;
+};
+export type ServiceRow = Omit<ServiceRecord, 'isBase' | 'id'> & { id: string };
+export type ServiceInput = Omit<ServiceRecord, 'id' | 'cover' | 'isBase'> & { id?: string; cover_id: string | null };
 export type Consent = { purpose: 'privacidad_servicio' | 'comercial_marketing'; granted: boolean };
 export type Staff = { id: string; email: string; full_name: string; role: AppRole };
 export type Activity = { id: string; lead_id: string; kind: string; body: string | null; at: string; actor: string | null };

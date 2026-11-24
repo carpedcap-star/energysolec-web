@@ -9,6 +9,9 @@ import { LEAD_STAGES, ORDER_STATUSES, PAID_STATES, type AppRole } from '@/lib/da
 import { checkUpload, parseProductForm, UPLOAD_LIMITS, type SniffedType } from '@/lib/services/catalog';
 import { parseProjectForm, PROJECT_MEDIA_LIMITS } from '@/lib/services/projects';
 import { findBlock, parseBlockForm } from '@/content/blocks';
+import { parseBrandForm } from '@/lib/services/brands';
+import { parseServiceForm } from '@/lib/services/service-catalog';
+import { SERVICES } from '@/content/segments';
 
 export async function loginAction(_: unknown, fd: FormData) {
   const err = await signIn(String(fd.get('email') ?? ''), String(fd.get('password') ?? ''), (fd.get('role') as AppRole) || 'superadmin');
@@ -254,4 +257,132 @@ export async function resetContentBlockAction(page: string, slot: string, _: unk
   try { await getStore().deleteContentBlock(page, slot); } catch (e) { return { error: (e as Error).message }; }
   revalidateBlock(def.path);
   redirect(`/admin/contenido/${page}/${slot}?restaurado=1`);
+}
+
+// ---------------------------------------------------------------- Marcas
+function revalidateBrands() { revalidatePath('/marcas'); revalidatePath('/'); revalidatePath('/tienda'); revalidatePath('/admin/marcas'); }
+/** PDF o imagen escaneada (para respaldos). */
+function checkDocOrImage(bytes: Uint8Array, name: string): SniffedType | string {
+  const d = checkUpload(bytes, 'document', name);
+  if (typeof d !== 'string') return d;
+  const i = checkUpload(bytes, 'image', name);
+  return typeof i === 'string' ? `"${name}" debe ser un PDF o una imagen JPG, PNG o WebP (máximo 15 MB el PDF, 5 MB la imagen).` : i;
+}
+
+export async function saveBrandAction(_: unknown, fd: FormData): Promise<{ error?: string }> {
+  await requireStaff('brands');
+  const store = getStore();
+  const id = typeof fd.get('id') === 'string' ? String(fd.get('id')) : '';
+  const prev = id ? await store.getBrandRecord(id) : null;
+  if (id && !prev) return { error: 'Marca no encontrada.' };
+
+  // 1) Archivos de documentos por fila: se validan y se reservan con un id provisional.
+  const keys = fd.getAll('asset.key').map(String);
+  const mids = fd.getAll('asset.media_id').map(String);
+  const pending = new Map<string, { bytes: Uint8Array; t: SniffedType }>();
+  for (let i = 0; i < keys.length; i++) {
+    const f = files(fd.getAll(`asset_file.${keys[i]}`))[0];
+    if (!f) continue;
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    const t = checkUpload(bytes, 'document', f.name);
+    if (typeof t === 'string') return { error: t };
+    const tmp = `pending-${i}`;
+    pending.set(tmp, { bytes, t }); mids[i] = tmp;
+  }
+  fd.delete('asset.media_id'); mids.forEach((m) => fd.append('asset.media_id', m));
+
+  const logoFile = files(fd.getAll('new_logo'))[0];
+  const docFile = files(fd.getAll('new_doc'))[0];
+  // Con un respaldo nuevo, la validación ya lo cuenta como cargado.
+  if (docFile && !fd.get('relationship_doc_id')) fd.set('relationship_doc_id', 'pending-doc');
+
+  const parsed = parseBrandForm(fd);
+  if ('error' in parsed) return { error: parsed.error };
+  const input = parsed.data;
+
+  // 2) Solo se conservan archivos que ya pertenecían a esta marca.
+  const ownAssets = new Set(prev?.assets.map((a) => a.media?.id).filter(Boolean));
+  if ((input.logo_id && input.logo_id !== prev?.logo?.id)
+    || (input.relationship_doc_id && input.relationship_doc_id !== 'pending-doc' && input.relationship_doc_id !== prev?.relationship_doc?.id)
+    || input.assets.some((a) => a.media_id && !a.media_id.startsWith('pending-') && !ownAssets.has(a.media_id)))
+    return { error: 'Los archivos cambiaron mientras editabas. Recarga la página.' };
+
+  let logo: { bytes: Uint8Array; t: SniffedType } | null = null, doc: { bytes: Uint8Array; t: SniffedType } | null = null;
+  if (logoFile) {
+    const c = await checkedImages([logoFile]);
+    if (typeof c === 'string') return { error: `${c} (el logo debe ser PNG, JPG o WebP; SVG no se acepta por seguridad).` };
+    logo = c[0];
+  }
+  if (docFile) {
+    const bytes = new Uint8Array(await docFile.arrayBuffer());
+    const t = checkDocOrImage(bytes, docFile.name);
+    if (typeof t === 'string') return { error: t };
+    doc = { bytes, t };
+  }
+
+  // 3) Subidas y guardado.
+  let savedId: string;
+  try {
+    const up = (c: { bytes: Uint8Array; t: SniffedType }, folder: string, bucket?: 'private-docs') =>
+      store.uploadMedia({ bytes: c.bytes, mime: c.t.mime, ext: c.t.ext, kind: c.t.kind, folder, alt: input.name, bucket });
+    if (logo) input.logo_id = (await up(logo, 'brands')).id;
+    if (doc) input.relationship_doc_id = (await up(doc, 'brand-backing', 'private-docs')).id;
+    for (const a of input.assets) if (a.media_id?.startsWith('pending-')) a.media_id = (await up(pending.get(a.media_id)!, 'brand-assets')).id;
+    savedId = await store.saveBrand(input);
+  } catch (e) { return { error: (e as Error).message }; }
+  revalidateBrands();
+  redirect(`/admin/marcas/${savedId}?guardado=1`);
+}
+
+export async function deleteBrandAction(id: string, _: unknown, _fd: FormData): Promise<{ error?: string }> {
+  await requireStaff('brands');
+  const prev = await getStore().getBrandRecord(id);
+  if (!prev) return { error: 'Marca no encontrada.' };
+  try { await getStore().deleteBrand(id); } catch (e) { return { error: (e as Error).message }; }
+  revalidateBrands();
+  redirect(`/admin/marcas?eliminado=${encodeURIComponent(prev.name)}`);
+}
+
+// ---------------------------------------------------------------- Servicios
+function revalidateServices(...slugs: string[]) {
+  revalidatePath('/servicios'); revalidatePath('/sitemap.xml'); revalidatePath('/admin/servicios');
+  for (const s of new Set(slugs)) revalidatePath(`/servicios/${s}`);
+}
+
+export async function saveServiceAction(_: unknown, fd: FormData): Promise<{ error?: string }> {
+  await requireStaff('services');
+  // Los servicios del catálogo base conservan su URL.
+  const baseSlug = String(fd.get('base_slug') ?? '');
+  if (baseSlug) { if (!SERVICES.some((s) => s.slug === baseSlug)) return { error: 'Servicio base no válido.' }; fd.set('slug', baseSlug); }
+  const parsed = parseServiceForm(fd);
+  if ('error' in parsed) return { error: parsed.error };
+  const input = parsed.data;
+  if (!baseSlug && SERVICES.some((s) => s.slug === input.slug)) return { error: 'Esa URL pertenece a un servicio del catálogo base. Elige otra.' };
+  const store = getStore();
+  const rows = await store.listServiceRows();
+  const prev = input.id ? rows.find((r) => r.id === input.id) : rows.find((r) => r.slug === baseSlug && baseSlug);
+  if (input.id && !prev) return { error: 'Servicio no encontrado.' };
+  if (prev && !input.id) input.id = prev.id; // servicio base que ya tenía fila
+  if (input.cover_id && input.cover_id !== prev?.cover?.id) return { error: 'La imagen cambió mientras editabas. Recarga la página.' };
+  const coverFile = files(fd.getAll('new_cover'))[0];
+  const c = await checkedImages(coverFile ? [coverFile] : []);
+  if (typeof c === 'string') return { error: c };
+  try {
+    if (c[0]) input.cover_id = (await store.uploadMedia({ bytes: c[0].bytes, mime: c[0].t.mime, ext: c[0].t.ext, kind: 'image', folder: 'services', alt: input.name })).id;
+    await store.saveService(input);
+  } catch (e) { return { error: (e as Error).message }; }
+  revalidateServices(input.slug, ...(prev ? [prev.slug] : []));
+  redirect(`/admin/servicios/${input.slug}?guardado=1`);
+}
+
+/** Servicio nuevo: lo elimina. Servicio base: borra su fila y vuelve a la versión base (provisional). */
+export async function deleteServiceAction(slug: string, _: unknown, _fd: FormData): Promise<{ error?: string }> {
+  await requireStaff('services');
+  const store = getStore();
+  const row = (await store.listServiceRows()).find((r) => r.slug === slug);
+  if (!row) return { error: 'Servicio no encontrado.' };
+  try { await store.deleteService(row.id); } catch (e) { return { error: (e as Error).message }; }
+  revalidateServices(slug);
+  const base = SERVICES.some((s) => s.slug === slug);
+  redirect(base ? `/admin/servicios/${slug}?restaurado=1` : `/admin/servicios?eliminado=${encodeURIComponent(row.name)}`);
 }
