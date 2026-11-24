@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Identidad Energy Solutions Ecuador — colores tomados del logotipo oficial.
+   Editables desde el panel (site_settings.brand), que sobrescribe estas variables en <html style>. */
+:root {
+  --brand: 253 201 19;      /* #FDC913 amarillo */
+  --brand-dark: 40 38 38;   /* #282626 grafito */
+  --accent: 0 130 170;      /* #0082AA azul */
+  --ink: 40 38 38;
+  --surface: 250 249 246;
+  --muted: 107 103 103;
+  --line: 228 225 220;
+  --font-sans: 'Archivo', system-ui, sans-serif;
+  --font-display: 'Archivo', system-ui, sans-serif;
+}
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body { background: rgb(var(--surface)); color: rgb(var(--ink)); font-family: var(--font-sans); }
+@layer components {
+.font-display { font-family: var(--font-display); font-stretch: 125%; letter-spacing: -0.01em; }
+.eyebrow { @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-accent; }
+.container-site { @apply mx-auto w-full max-w-site px-4 sm:px-6 lg:px-8; }
+.btn { @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full px-5 py-3 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:opacity-50; }
+.btn-primary { @apply btn bg-brand text-brand-dark hover:brightness-95; }
+.btn-dark { @apply btn bg-brand-dark text-white hover:bg-black; }
+.btn-ghost { @apply btn border border-line bg-white text-ink hover:border-ink; }
+.btn-ghost-dark { @apply btn border border-white/25 text-white hover:border-white; }
+.card { @apply rounded-2xl border border-line bg-white; }
+.input { @apply w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-[15px] outline-none transition focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20; }
+.label { @apply mb-1.5 block text-sm font-medium; }
+.placeholder-badge { @apply inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-900; }
+}
+.reveal { animation: reveal .6s cubic-bezier(.2,.7,.2,1) both; }
+@keyframes reveal { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .reveal { animation: none; } html { scroll-behavior: auto; } }

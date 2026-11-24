@@ -1,0 +1,11 @@
+const usd = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const usd2 = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const num = new Intl.NumberFormat('es-EC', { maximumFractionDigits: 1 });
+export const fmtUsd = (v: number) => usd.format(v);
+export const fmtUsd2 = (v: number) => usd2.format(v);
+export const fmtNum = (v: number, d = 1) => new Intl.NumberFormat('es-EC', { maximumFractionDigits: d }).format(v);
+export const fmtKwh = (v: number) => (v >= 1e6 ? `${num.format(v / 1e6)} GWh` : v >= 1e4 ? `${num.format(v / 1e3)} MWh` : `${num.format(v)} kWh`);
+export const fmtKwp = (v: number) => (v >= 1000 ? `${num.format(v / 1000)} MWp` : `${num.format(v)} kWp`);
+export const fmtPct = (v: number) => `${num.format(v * 100)} %`;
+export const fmtYears = (v: number | null) => (v == null ? 'más de la vida útil' : `${num.format(v)} años`);
+export const MONTHS_ES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];

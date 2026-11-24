@@ -1,0 +1,2243 @@
+{
+ "params": [
+  {
+   "version": 1,
+   "isPlaceholder": true,
+   "technical": {
+    "moduleWp": 580,
+    "moduleAreaM2": 2.58,
+    "roofM2PerKwp": 6,
+    "groundM2PerKwp": 12,
+    "dcAcRatio": 1.2,
+    "soilingLoss": 0.03,
+    "dcWiringMismatchLoss": 0.025,
+    "acWiringLoss": 0.01,
+    "inverterEfficiency": 0.975,
+    "availability": 0.99,
+    "shadingLoss": {
+     "none": 0,
+     "partial": 0.06,
+     "significant": 0.15
+    },
+    "firstYearDegradation": 0.01,
+    "annualDegradation": 0.004,
+    "batteryRoundTrip": 0.9,
+    "batteryUsableDoD": 0.9,
+    "defaultDaytimeShare": {
+     "residencial": 0.35,
+     "comercial": 0.65,
+     "industrial": 0.7
+    },
+    "coverageTarget": 0.9,
+    "gridCo2KgPerKwh": 0.3,
+    "fallbackYield": {
+     "costa": 1150,
+     "sierra": 1250,
+     "amazonia": 1050,
+     "insular": 1400
+    }
+   },
+   "financial": {
+    "lifetimeYears": 25,
+    "discountRate": 0.1,
+    "omUsdPerKwpYear": 12,
+    "omEscalation": 0.02,
+    "inverterReplacementYear": 13,
+    "inverterReplacementShareOfCapex": 0.1,
+    "batteryReplacementYear": 12,
+    "exportCompensation": "none",
+    "exportPriceUsdPerKwh": 0,
+    "demandSavingsFromPv": false,
+    "scenarios": {
+     "conservador": {
+      "yieldFactor": 0.93,
+      "tariffEscalation": 0,
+      "capexFactor": 1.1,
+      "extraDegradation": 0.002
+     },
+     "base": {
+      "yieldFactor": 1,
+      "tariffEscalation": 0.01,
+      "capexFactor": 1,
+      "extraDegradation": 0
+     },
+     "optimista": {
+      "yieldFactor": 1.03,
+      "tariffEscalation": 0.02,
+      "capexFactor": 0.95,
+      "extraDegradation": 0
+     }
+    },
+    "financing": {
+     "enabled": false,
+     "annualRate": 0.11,
+     "years": 5,
+     "downPayment": 0.3
+    }
+   },
+   "pricing": {
+    "pvTiers": [
+     {
+      "upToKwp": 5,
+      "usdPerKwp": 1150
+     },
+     {
+      "upToKwp": 20,
+      "usdPerKwp": 980
+     },
+     {
+      "upToKwp": 100,
+      "usdPerKwp": 840
+     },
+     {
+      "upToKwp": 500,
+      "usdPerKwp": 720
+     },
+     {
+      "upToKwp": 1000000000,
+      "usdPerKwp": 640
+     }
+    ],
+    "engineeringShare": 0.05,
+    "batteryUsdPerKwh": 480,
+    "vatOnCapex": 0.15,
+    "minimumProjectUsd": 3500
+   }
+  },
+  {
+   "isPlaceholder": true,
+   "technical": {
+    "moduleWp": 580,
+    "moduleAreaM2": 2.58,
+    "roofM2PerKwp": 6,
+    "groundM2PerKwp": 12,
+    "dcAcRatio": 1.2,
+    "soilingLoss": 0.03,
+    "dcWiringMismatchLoss": 0.025,
+    "acWiringLoss": 0.01,
+    "inverterEfficiency": 0.975,
+    "availability": 0.99,
+    "shadingLoss": {
+     "none": 0,
+     "partial": 0.06,
+     "significant": 0.15
+    },
+    "firstYearDegradation": 0.01,
+    "annualDegradation": 0.004,
+    "batteryRoundTrip": 0.9,
+    "batteryUsableDoD": 0.9,
+    "defaultDaytimeShare": {
+     "residencial": 0.35,
+     "comercial": 0.65,
+     "industrial": 0.7
+    },
+    "coverageTarget": 0.9,
+    "gridCo2KgPerKwh": 0.3,
+    "fallbackYield": {
+     "costa": 1150,
+     "sierra": 1250,
+     "amazonia": 1050,
+     "insular": 1400
+    }
+   },
+   "financial": {
+    "lifetimeYears": 25,
+    "discountRate": 0.1,
+    "omUsdPerKwpYear": 12,
+    "omEscalation": 0.02,
+    "inverterReplacementYear": 13,
+    "inverterReplacementShareOfCapex": 0.1,
+    "batteryReplacementYear": 12,
+    "exportCompensation": "none",
+    "exportPriceUsdPerKwh": 0,
+    "demandSavingsFromPv": false,
+    "scenarios": {
+     "conservador": {
+      "yieldFactor": 0.93,
+      "tariffEscalation": 0,
+      "capexFactor": 1.1,
+      "extraDegradation": 0.002
+     },
+     "base": {
+      "yieldFactor": 1,
+      "tariffEscalation": 0.01,
+      "capexFactor": 1,
+      "extraDegradation": 0
+     },
+     "optimista": {
+      "yieldFactor": 1.03,
+      "tariffEscalation": 0.02,
+      "capexFactor": 0.95,
+      "extraDegradation": 0
+     }
+    },
+    "financing": {
+     "enabled": false,
+     "annualRate": 0.11,
+     "years": 5,
+     "downPayment": 0.3
+    }
+   },
+   "pricing": {
+    "pvTiers": [
+     {
+      "upToKwp": 5,
+      "usdPerKwp": 1150
+     },
+     {
+      "upToKwp": 20,
+      "usdPerKwp": 980
+     },
+     {
+      "upToKwp": 100,
+      "usdPerKwp": 840
+     },
+     {
+      "upToKwp": 500,
+      "usdPerKwp": 720
+     },
+     {
+      "upToKwp": 1000000000,
+      "usdPerKwp": 640
+     }
+    ],
+    "engineeringShare": 0.05,
+    "batteryUsdPerKwh": 480,
+    "vatOnCapex": 0.15,
+    "minimumProjectUsd": 3500
+   },
+   "version": 2
+  }
+ ],
+ "tariffs": [
+  {
+   "code": "RES-BT",
+   "name": "Residencial baja tensión (referencial)",
+   "segment": "residencial",
+   "voltage_level": "BT",
+   "has_demand_charge": false,
+   "demand_usd_per_kw": null,
+   "commercialization_usd": 1.41,
+   "other_charges_pct": 0.1,
+   "energy_blocks": [
+    {
+     "from_kwh": 0,
+     "to_kwh": 130,
+     "usd_per_kwh": 0.04
+    },
+    {
+     "from_kwh": 130,
+     "to_kwh": 500,
+     "usd_per_kwh": 0.092
+    },
+    {
+     "from_kwh": 500,
+     "to_kwh": null,
+     "usd_per_kwh": 0.105
+    }
+   ],
+   "source_note": "PROVISIONAL — valores aproximados de referencia; validar contra el pliego tarifario ARCONEL vigente.",
+   "is_placeholder": true,
+   "id": "4850ea60-6ece-4986-b80f-6e02c78ecf20"
+  },
+  {
+   "code": "COM-BT",
+   "name": "Comercial baja tensión sin demanda (referencial)",
+   "segment": "comercial",
+   "voltage_level": "BT",
+   "has_demand_charge": false,
+   "demand_usd_per_kw": null,
+   "commercialization_usd": 1.41,
+   "other_charges_pct": 0.1,
+   "energy_blocks": [
+    {
+     "from_kwh": 0,
+     "to_kwh": null,
+     "usd_per_kwh": 0.092
+    }
+   ],
+   "source_note": "PROVISIONAL — valores aproximados de referencia; validar contra el pliego tarifario ARCONEL vigente.",
+   "is_placeholder": true,
+   "id": "f16ee28e-685e-4aba-90cd-680858737b61"
+  },
+  {
+   "code": "COM-BT-D",
+   "name": "Comercial baja tensión con demanda (referencial)",
+   "segment": "comercial",
+   "voltage_level": "BT",
+   "has_demand_charge": true,
+   "demand_usd_per_kw": 4.79,
+   "commercialization_usd": 1.41,
+   "other_charges_pct": 0.08,
+   "energy_blocks": [
+    {
+     "from_kwh": 0,
+     "to_kwh": null,
+     "usd_per_kwh": 0.09
+    }
+   ],
+   "source_note": "PROVISIONAL — valores aproximados de referencia; validar contra el pliego tarifario ARCONEL vigente.",
+   "is_placeholder": true,
+   "id": "0585dbb1-9fa2-4c9f-acb1-5461879fa361"
+  },
+  {
+   "code": "IND-MT-D",
+   "name": "Industrial media tensión con demanda (referencial)",
+   "segment": "industrial",
+   "voltage_level": "MT",
+   "has_demand_charge": true,
+   "demand_usd_per_kw": 4.79,
+   "commercialization_usd": 1.41,
+   "other_charges_pct": 0.06,
+   "energy_blocks": [
+    {
+     "from_kwh": 0,
+     "to_kwh": null,
+     "usd_per_kwh": 0.08
+    }
+   ],
+   "source_note": "PROVISIONAL — valores aproximados de referencia; validar contra el pliego tarifario ARCONEL vigente.",
+   "is_placeholder": true,
+   "id": "085a28a3-56bb-47ab-a9f5-27bfec7c74e7"
+  }
+ ],
+ "studies": [
+  {
+   "mode": "rapida",
+   "inputs": {
+    "mode": "rapida",
+    "segment": "comercial",
+    "objective": "reducir_factura",
+    "province": "Guayas",
+    "city": "",
+    "address": "",
+    "monthlyBillUsd": 1500,
+    "demandKw": 0,
+    "surface": "cubierta",
+    "tilt": 10,
+    "shading": "none",
+    "wantsBattery": false,
+    "lat": -2.171,
+    "lng": -79.9224
+   },
+   "results": {
+    "consumption": {
+     "monthlyKwh": [
+      14808,
+      14808,
+      14808,
+      14808,
+      14808,
+      14808,
+      14808,
+      14808,
+      14808,
+      14808,
+      14808,
+      14808
+     ],
+     "estimatedFromBill": true,
+     "annualKwh": 177696
+    },
+    "sizing": {
+     "kwp": 112.52,
+     "kwpUnconstrained": 112.26,
+     "limitedByArea": false,
+     "modules": 194,
+     "inverterKw": 100,
+     "areaM2": 675,
+     "specificYieldYear1": 1029,
+     "performanceRatio": null,
+     "monthlyGeneration": [
+      9833,
+      8881,
+      9833,
+      9516,
+      9833,
+      9516,
+      9833,
+      9833,
+      9516,
+      9833,
+      9516,
+      9833
+     ],
+     "annualGeneration": 115775,
+     "monthlySelfConsumed": [
+      9625,
+      8881,
+      9625,
+      9516,
+      9625,
+      9516,
+      9625,
+      9625,
+      9516,
+      9625,
+      9516,
+      9625
+     ],
+     "monthlyExported": [
+      208,
+      0,
+      208,
+      0,
+      208,
+      0,
+      208,
+      208,
+      0,
+      208,
+      0,
+      208
+     ],
+     "selfConsumptionRatio": 0.987,
+     "coverage": 0.643,
+     "battery": null,
+     "annualConsumption": 177696,
+     "daytimeShare": 0.65,
+     "lossItems": [
+      {
+       "label": "Suciedad",
+       "loss": 0.03
+      },
+      {
+       "label": "Sombreado",
+       "loss": 0
+      },
+      {
+       "label": "Cableado DC y mismatch",
+       "loss": 0.025
+      },
+      {
+       "label": "Eficiencia de inversor",
+       "loss": 0.025000000000000022
+      },
+      {
+       "label": "Cableado AC",
+       "loss": 0.01
+      },
+      {
+       "label": "Disponibilidad",
+       "loss": 0.010000000000000009
+      }
+     ],
+     "assumptions": [
+      "No fue posible consultar PVGIS ni NASA POWER; se usó un rendimiento regional conservador sin estacionalidad. El estudio debe recalcularse.",
+      "Ubicación aproximada: capital provincial (Guayaquil).",
+      "Sin compensación de excedentes: el sistema se dimensiona al consumo diurno estimado (65 %) para no generar energía que no se aprovecha.",
+      "Recurso solar: Estimación regional conservadora. Pérdidas de sistema aplicadas una sola vez: 9.6 %.",
+      "Módulo de referencia 580 Wp, relación DC/AC 1.2.",
+      "Supuesto de autoconsumo mensual: la generación cubre como máximo el consumo diurno. Una curva de carga horaria afina este resultado."
+     ]
+    },
+    "resource": {
+     "source": "Estimación regional conservadora",
+     "candidates": []
+    },
+    "scenarios": {
+     "conservador": {
+      "scenario": "conservador",
+      "capex": {
+       "pv": 81014.4,
+       "storage": 0,
+       "engineering": 4050.72,
+       "net": 93571.632,
+       "vat": 14035.744799999999,
+       "total": 107607.3768,
+       "usdPerKwp": 720
+      },
+      "savingYear1": 10759.341120000003,
+      "savingMonthYear1": 896.6117600000002,
+      "billBeforeYear": 17999.755200000003,
+      "billAfterYear": 7240.4140800000005,
+      "billReduction": 0.5977493027238504,
+      "cashflows": [
+       -107607.3768,
+       9409.101120000003,
+       9317.540273280003,
+       9225.826666840323,
+       9133.947174743282,
+       9041.8884689569,
+       8949.637014950482,
+       8857.179067204246,
+       8764.500664631358,
+       8671.587625910515,
+       8578.425544727334,
+       8484.999784922698,
+       8391.295475546165,
+       -1059.8656941874506,
+       8202.990519959734,
+       8108.358912005671,
+       8013.38682040265,
+       7918.058122586624,
+       7822.356429419624,
+       7726.265079522998,
+       7629.7671334993465,
+       7532.8453680409075,
+       7435.482269922071,
+       7337.660029873738,
+       7239.360536337115,
+       7140.5653690945655
+      ],
+      "cumulative": [
+       -107607.3768,
+       -98198.27567999999,
+       -88880.73540671999,
+       -79654.90873987967,
+       -70520.96156513639,
+       -61479.07309617948,
+       -52529.436081229,
+       -43672.257014024755,
+       -34907.7563493934,
+       -26236.168723482886,
+       -17657.743178755554,
+       -9172.743393832856,
+       -781.4479182866908,
+       -1841.3136124741413,
+       6361.676907485593,
+       14470.035819491264,
+       22483.422639893914,
+       30401.48076248054,
+       38223.837191900166,
+       45950.102271423166,
+       53579.869404922516,
+       61112.71477296342,
+       68548.1970428855,
+       75885.85707275923,
+       83125.21760909635,
+       90265.78297819091
+      ],
+      "simplePayback": 13.224468577404034,
+      "discountedPayback": null,
+      "npv": -31196.669106428813,
+      "irr": 0.0573676897310179,
+      "lcoe": 0.13328980234239535,
+      "savings25": 250478.91487649377,
+      "roi": 0.8388438196570824,
+      "generationByYear": [
+       107671,
+       107025,
+       106383,
+       105744,
+       105110,
+       104479,
+       103852,
+       103229,
+       102610,
+       101994,
+       101382,
+       100774,
+       100169,
+       99568,
+       98971,
+       98377,
+       97787,
+       97200,
+       96617,
+       96037,
+       95461,
+       94888,
+       94319,
+       93753,
+       93190
+      ],
+      "loan": null
+     },
+     "base": {
+      "scenario": "base",
+      "capex": {
+       "pv": 81014.4,
+       "storage": 0,
+       "engineering": 4050.72,
+       "net": 85065.12,
+       "vat": 12759.767999999998,
+       "total": 97824.88799999999,
+       "usdPerKwp": 720
+      },
+      "savingYear1": 11569.184000000003,
+      "savingMonthYear1": 964.0986666666669,
+      "billBeforeYear": 17999.755200000003,
+      "billAfterYear": 6430.5712,
+      "billReduction": 0.6427411857245704,
+      "cashflows": [
+       -97824.88799999999,
+       10218.944000000003,
+       10260.891536640003,
+       10302.709933206377,
+       10344.39083707645,
+       10385.925694186946,
+       10427.305744800255,
+       10468.522019184738,
+       10509.565333207462,
+       10550.426283837527,
+       10591.09524455823,
+       10631.562360686208,
+       10671.81754459572,
+       2205.338470846131,
+       10751.650571210685,
+       10791.207029604575,
+       10830.508776910287,
+       10869.544485698125,
+       10908.302564839885,
+       10946.771154013473,
+       10984.938118096276,
+       11022.79104144511,
+       11060.317222060406,
+       11097.50366563233,
+       11134.337079466515,
+       11170.803866286891
+      ],
+      "cumulative": [
+       -97824.88799999999,
+       -87605.94399999999,
+       -77345.05246335999,
+       -67042.3425301536,
+       -56697.95169307716,
+       -46312.02599889021,
+       -35884.72025408996,
+       -25416.19823490522,
+       -14906.632901697758,
+       -4356.206617860231,
+       6234.888626697999,
+       16866.450987384207,
+       27538.268531979928,
+       29743.60700282606,
+       40495.25757403675,
+       51286.46460364132,
+       62116.9733805516,
+       72986.51786624972,
+       83894.82043108961,
+       94841.59158510309,
+       105826.52970319937,
+       116849.32074464447,
+       127909.63796670487,
+       139007.1416323372,
+       150141.47871180373,
+       161312.2825780906
+      ],
+      "simplePayback": 9.41130841686071,
+      "discountedPayback": null,
+      "npv": -4760.341603464134,
+      "irr": 0.09364898530236132,
+      "lcoe": 0.11233405206498892,
+      "savings25": 310892.2744763934,
+      "roi": 1.6489902097111588,
+      "generationByYear": [
+       115775,
+       115312,
+       114851,
+       114391,
+       113934,
+       113478,
+       113024,
+       112572,
+       112122,
+       111673,
+       111226,
+       110782,
+       110338,
+       109897,
+       109458,
+       109020,
+       108584,
+       108149,
+       107717,
+       107286,
+       106857,
+       106429,
+       106004,
+       105579,
+       105157
+      ],
+      "loan": null
+     },
+     "optimista": {
+      "scenario": "optimista",
+      "capex": {
+       "pv": 81014.4,
+       "storage": 0,
+       "engineering": 4050.72,
+       "net": 80811.86399999999,
+       "vat": 12121.779599999998,
+       "total": 92933.64359999998,
+       "usdPerKwp": 720
+      },
+      "savingYear1": 11916.259520000003,
+      "savingMonthYear1": 993.021626666667,
+      "billBeforeYear": 17999.755200000003,
+      "billAfterYear": 6083.49568,
+      "billReduction": 0.6620234212963074,
+      "cashflows": [
+       -92933.64359999998,
+       10566.019520000003,
+       10728.721571558403,
+       10893.903660193613,
+       11061.603064504217,
+       11231.857612492247,
+       11404.705689428272,
+       11580.186245824025,
+       11758.338805513995,
+       11939.203473847363,
+       12122.820945991585,
+       12309.232515349157,
+       12498.480082088849,
+       4609.419761792946,
+       12885.653894221872,
+       13083.667052197728,
+       13284.690050608162,
+       13488.76795553208,
+       13695.94649348875,
+       13906.272060811783,
+       14119.791733149528,
+       14336.553275093487,
+       14556.605149936238,
+       14779.996529560545,
+       15006.777304461224,
+       15236.99809390132
+      ],
+      "cumulative": [
+       -92933.64359999998,
+       -82367.62407999998,
+       -71638.90250844158,
+       -60744.99884824797,
+       -49683.39578374375,
+       -38451.5381712515,
+       -27046.83248182323,
+       -15466.646235999204,
+       -3708.307430485209,
+       8230.896043362154,
+       20353.71698935374,
+       32662.949504702898,
+       45161.429586791746,
+       49770.84934858469,
+       62656.50324280656,
+       75740.1702950043,
+       89024.86034561245,
+       102513.62830114453,
+       116209.57479463328,
+       130115.84685544507,
+       144235.6385885946,
+       158572.1918636881,
+       173128.79701362434,
+       187908.79354318487,
+       202915.5708476461,
+       218152.56894154742
+      ],
+      "simplePayback": 8.310599232068387,
+      "discountedPayback": 17.985497912021472,
+      "npv": 12714.342928921335,
+      "irr": 0.11635039275212875,
+      "lcoe": 0.10429052103277961,
+      "savings25": 362415.9908398503,
+      "roi": 2.3474014414038047,
+      "generationByYear": [
+       119248,
+       118771,
+       118296,
+       117823,
+       117352,
+       116882,
+       116415,
+       115949,
+       115485,
+       115023,
+       114563,
+       114105,
+       113649,
+       113194,
+       112741,
+       112290,
+       111841,
+       111394,
+       110948,
+       110504,
+       110062,
+       109622,
+       109184,
+       108747,
+       108312
+      ],
+      "loan": null
+     }
+    },
+    "environment": {
+     "co2TonsYear": 34.7,
+     "co2Tons25": 828,
+     "treesEquivalent": 1593
+    },
+    "tariff": {
+     "code": "COM-BT",
+     "name": "Comercial baja tensión sin demanda (referencial)",
+     "isPlaceholder": true,
+     "sourceNote": "PROVISIONAL — valores aproximados de referencia; validar contra el pliego tarifario ARCONEL vigente."
+    },
+    "paramsVersion": 1,
+    "paramsPlaceholder": true,
+    "warnings": [
+     "El consumo se estimó a partir del valor de la factura y la tarifa seleccionada. Con el dato de kWh de tu planilla el resultado es más preciso.",
+     "Tarifa eléctrica PROVISIONAL: pendiente de validar con el pliego tarifario vigente.",
+     "Parámetros de precios PROVISIONALES: pendientes de validación por Energy Solutions Ecuador."
+    ],
+    "disclaimer": "Este estudio constituye una prefactibilidad técnica y económica referencial. Está sujeto a inspección en sitio, ingeniería definitiva, verificación regulatoria y cotización formal de Energy Solutions Ecuador S.A.S."
+   },
+   "params_version": 1,
+   "solar_source": "Estimación regional conservadora",
+   "id": "59d412af-1d8e-4192-9173-8c8cf220ad70",
+   "code": "ESE-2026-000001",
+   "lead_id": "cd625d74-c2d8-4eea-b747-0c4927f02eb6",
+   "unlocked": true,
+   "visit_requested": true,
+   "created_at": "2026-11-24T16:04:09.716Z"
+  },
+  {
+   "mode": "rapida",
+   "inputs": {
+    "mode": "rapida",
+    "segment": "comercial",
+    "objective": "reducir_factura",
+    "province": "Manabí",
+    "city": "",
+    "address": "",
+    "monthlyBillUsd": 850,
+    "demandKw": 0,
+    "surface": "cubierta",
+    "tilt": 10,
+    "shading": "partial",
+    "wantsBattery": false,
+    "lat": -1.0546,
+    "lng": -80.4544
+   },
+   "results": {
+    "consumption": {
+     "monthlyKwh": [
+      8385,
+      8385,
+      8385,
+      8385,
+      8385,
+      8385,
+      8385,
+      8385,
+      8385,
+      8385,
+      8385,
+      8385
+     ],
+     "estimatedFromBill": true,
+     "annualKwh": 100620
+    },
+    "sizing": {
+     "kwp": 67.86,
+     "kwpUnconstrained": 67.62,
+     "limitedByArea": false,
+     "modules": 117,
+     "inverterKw": 60,
+     "areaM2": 407,
+     "specificYieldYear1": 967,
+     "performanceRatio": null,
+     "monthlyGeneration": [
+      5574,
+      5035,
+      5574,
+      5395,
+      5574,
+      5395,
+      5574,
+      5574,
+      5395,
+      5574,
+      5395,
+      5574
+     ],
+     "annualGeneration": 65634,
+     "monthlySelfConsumed": [
+      5450,
+      5035,
+      5450,
+      5395,
+      5450,
+      5395,
+      5450,
+      5450,
+      5395,
+      5450,
+      5395,
+      5450
+     ],
+     "monthlyExported": [
+      124,
+      0,
+      124,
+      0,
+      124,
+      0,
+      124,
+      124,
+      0,
+      124,
+      0,
+      124
+     ],
+     "selfConsumptionRatio": 0.987,
+     "coverage": 0.644,
+     "battery": null,
+     "annualConsumption": 100620,
+     "daytimeShare": 0.65,
+     "lossItems": [
+      {
+       "label": "Suciedad",
+       "loss": 0.03
+      },
+      {
+       "label": "Sombreado",
+       "loss": 0.06
+      },
+      {
+       "label": "Cableado DC y mismatch",
+       "loss": 0.025
+      },
+      {
+       "label": "Eficiencia de inversor",
+       "loss": 0.025000000000000022
+      },
+      {
+       "label": "Cableado AC",
+       "loss": 0.01
+      },
+      {
+       "label": "Disponibilidad",
+       "loss": 0.010000000000000009
+      }
+     ],
+     "assumptions": [
+      "No fue posible consultar PVGIS ni NASA POWER; se usó un rendimiento regional conservador sin estacionalidad. El estudio debe recalcularse.",
+      "Ubicación aproximada: capital provincial (Portoviejo).",
+      "Sin compensación de excedentes: el sistema se dimensiona al consumo diurno estimado (65 %) para no generar energía que no se aprovecha.",
+      "Recurso solar: Estimación regional conservadora. Pérdidas de sistema aplicadas una sola vez: 15.0 %.",
+      "Módulo de referencia 580 Wp, relación DC/AC 1.2.",
+      "Supuesto de autoconsumo mensual: la generación cubre como máximo el consumo diurno. Una curva de carga horaria afina este resultado."
+     ]
+    },
+    "resource": {
+     "source": "Estimación regional conservadora",
+     "candidates": []
+    },
+    "scenarios": {
+     "conservador": {
+      "scenario": "conservador",
+      "capex": {
+       "pv": 57002.4,
+       "storage": 0,
+       "engineering": 2850.1200000000003,
+       "net": 65837.77200000001,
+       "vat": 9875.6658,
+       "total": 75713.43780000001,
+       "usdPerKwp": 840
+      },
+      "savingYear1": 6095.422739999999,
+      "savingMonthYear1": 507.9518949999999,
+      "billBeforeYear": 10199.663999999999,
+      "billAfterYear": 4104.24126,
+      "billReduction": 0.5976101506873167,
+      "cashflows": [
+       -75713.43780000001,
+       5281.102739999999,
+       5228.243803559999,
+       5175.278574338639,
+       5122.1992211646075,
+       5068.997790475059,
+       5015.666203662398,
+       4962.196254369216,
+       4908.579605730369,
+       4854.807787561103,
+       4800.872193490155,
+       4746.76407803672,
+       4692.474553630156,
+       -1945.7826124287367,
+       4583.3149989339845,
+       4528.426455406291,
+       4473.319470069083,
+       4417.9843981118,
+       4362.411433483526,
+       4306.590605478228,
+       4250.511775252875,
+       4194.164632277024,
+       4137.538690712541,
+       4080.6232857220293,
+       4023.4075697045346,
+       3965.880508457083
+      ],
+      "cumulative": [
+       -75713.43780000001,
+       -70432.33506000001,
+       -65204.09125644001,
+       -60028.81268210137,
+       -54906.613460936765,
+       -49837.6156704617,
+       -44821.949466799306,
+       -39859.75321243009,
+       -34951.173606699725,
+       -30096.36581913862,
+       -25295.493625648465,
+       -20548.729547611743,
+       -15856.254993981587,
+       -17802.037606410326,
+       -13218.722607476342,
+       -8690.296152070052,
+       -4216.976682000969,
+       201.0077161108311,
+       4563.419149594357,
+       8870.009755072584,
+       13120.521530325459,
+       17314.686162602484,
+       21452.224853315027,
+       25532.848139037058,
+       29556.25570874159,
+       33522.13621719868
+      ],
+      "simplePayback": 16.954502393399864,
+      "discountedPayback": null,
+      "npv": -33320.265048680696,
+      "irr": 0.03241694368441131,
+      "lcoe": 0.16271417467424182,
+      "savings25": 141902.2648878246,
+      "roi": 0.44275015362198583,
+      "generationByYear": [
+       61040,
+       60673,
+       60309,
+       59947,
+       59588,
+       59230,
+       58875,
+       58522,
+       58171,
+       57821,
+       57475,
+       57130,
+       56787,
+       56446,
+       56108,
+       55771,
+       55436,
+       55104,
+       54773,
+       54444,
+       54118,
+       53793,
+       53470,
+       53149,
+       52831
+      ],
+      "loan": null
+     },
+     "base": {
+      "scenario": "base",
+      "capex": {
+       "pv": 57002.4,
+       "storage": 0,
+       "engineering": 2850.1200000000003,
+       "net": 59852.520000000004,
+       "vat": 8977.878,
+       "total": 68830.398,
+       "usdPerKwp": 840
+      },
+      "savingYear1": 6554.217999999998,
+      "savingMonthYear1": 546.1848333333331,
+      "billBeforeYear": 10199.663999999999,
+      "billAfterYear": 3645.446000000001,
+      "billReduction": 0.6425915598788351,
+      "cashflows": [
+       -68830.398,
+       5739.897999999998,
+       5762.674739279998,
+       5785.358566870107,
+       5807.944355795534,
+       5830.426857060291,
+       5852.800697090674,
+       5875.060375126883,
+       5897.200260561817,
+       5919.214590225928,
+       5941.097465617059,
+       5962.842850074191,
+       5984.444565893926,
+       20.644291388615784,
+       6027.191557884892,
+       6048.323746661477,
+       6069.286085825004,
+       6090.071647122613,
+       6110.673342690076,
+       6131.083921734136,
+       6151.295967147729,
+       6171.301892056791,
+       6191.093936297206,
+       6210.664162820569,
+       6230.004454027272,
+       6249.106508025494
+      ],
+      "cumulative": [
+       -68830.398,
+       -63090.5,
+       -57327.825260720005,
+       -51542.4666938499,
+       -45734.52233805437,
+       -39904.095480994074,
+       -34051.2947839034,
+       -28176.23440877652,
+       -22279.0341482147,
+       -16359.819557988772,
+       -10418.722092371714,
+       -4455.879242297523,
+       1528.5653235964028,
+       1549.2096149850186,
+       7576.401172869911,
+       13624.724919531389,
+       19694.01100535639,
+       25784.082652479003,
+       31894.75599516908,
+       38025.83991690321,
+       44177.13588405094,
+       50348.437776107734,
+       56539.53171240494,
+       62750.19587522551,
+       68980.20032925278,
+       75229.30683727827
+      ],
+      "simplePayback": 11.74457690989271,
+      "discountedPayback": null,
+      "npv": -16968.651311821817,
+      "irr": 0.06643112239413312,
+      "lcoe": 0.1369320727349182,
+      "savings25": 176127.87050790427,
+      "roi": 1.092966320451587,
+      "generationByYear": [
+       65634,
+       65371,
+       65110,
+       64850,
+       64590,
+       64332,
+       64074,
+       63818,
+       63563,
+       63309,
+       63055,
+       62803,
+       62552,
+       62302,
+       62053,
+       61804,
+       61557,
+       61311,
+       61066,
+       60821,
+       60578,
+       60336,
+       60094,
+       59854,
+       59615
+      ],
+      "loan": null
+     },
+     "optimista": {
+      "scenario": "optimista",
+      "capex": {
+       "pv": 57002.4,
+       "storage": 0,
+       "engineering": 2850.1200000000003,
+       "net": 56859.894,
+       "vat": 8528.9841,
+       "total": 65388.8781,
+       "usdPerKwp": 840
+      },
+      "savingYear1": 6750.844539999999,
+      "savingMonthYear1": 562.5703783333332,
+      "billBeforeYear": 10199.663999999999,
+      "billAfterYear": 3448.8194599999997,
+      "billReduction": 0.6618693066752003,
+      "cashflows": [
+       -65388.8781,
+       5936.524539999999,
+       6027.711585076799,
+       6120.283879399221,
+       6214.262147165018,
+       6309.66741592176,
+       6406.521020864586,
+       6504.844609191731,
+       6604.660144518542,
+       6705.989911350727,
+       6808.856519617509,
+       6913.28290926546,
+       7019.292354913718,
+       1440.9190705713527,
+       7236.155214417604,
+       7347.056893645782,
+       7459.638169371567,
+       7573.924061606484,
+       7689.939954297352,
+       7807.71160043246,
+       7927.265127215296,
+       8048.62704130659,
+       8171.82423413554,
+       8296.883987280951,
+       8423.8339779232,
+       8552.702284367766
+      ],
+      "cumulative": [
+       -65388.8781,
+       -59452.35356,
+       -53424.6419749232,
+       -47304.35809552398,
+       -41090.09594835896,
+       -34780.4285324372,
+       -28373.907511572615,
+       -21869.062902380883,
+       -15264.40275786234,
+       -8558.412846511614,
+       -1749.556326894105,
+       5163.726582371355,
+       12183.018937285073,
+       13623.938007856425,
+       20860.09322227403,
+       28207.150115919812,
+       35666.788285291375,
+       43240.71234689786,
+       50930.652301195216,
+       58738.36390162767,
+       66665.62902884297,
+       74714.25607014957,
+       82886.0803042851,
+       91182.96429156605,
+       99606.79826948926,
+       108159.50055385703
+      ],
+      "simplePayback": 10.25307170990345,
+      "discountedPayback": null,
+      "npv": -6381.424146198617,
+      "irr": 0.08782772917988951,
+      "lcoe": 0.12702150874221302,
+      "savings25": 205317.28172448298,
+      "roi": 1.654096288186003,
+      "generationByYear": [
+       67603,
+       67333,
+       67063,
+       66795,
+       66528,
+       66262,
+       65997,
+       65733,
+       65470,
+       65208,
+       64947,
+       64687,
+       64429,
+       64171,
+       63914,
+       63658,
+       63404,
+       63150,
+       62898,
+       62646,
+       62395,
+       62146,
+       61897,
+       61650,
+       61403
+      ],
+      "loan": null
+     }
+    },
+    "environment": {
+     "co2TonsYear": 19.7,
+     "co2Tons25": 469,
+     "treesEquivalent": 903
+    },
+    "tariff": {
+     "code": "COM-BT",
+     "name": "Comercial baja tensión sin demanda (referencial)",
+     "isPlaceholder": true,
+     "sourceNote": "PROVISIONAL — valores aproximados de referencia; validar contra el pliego tarifario ARCONEL vigente."
+    },
+    "paramsVersion": 1,
+    "paramsPlaceholder": true,
+    "warnings": [
+     "El consumo se estimó a partir del valor de la factura y la tarifa seleccionada. Con el dato de kWh de tu planilla el resultado es más preciso.",
+     "Tarifa eléctrica PROVISIONAL: pendiente de validar con el pliego tarifario vigente.",
+     "Parámetros de precios PROVISIONALES: pendientes de validación por Energy Solutions Ecuador."
+    ],
+    "disclaimer": "Este estudio constituye una prefactibilidad técnica y económica referencial. Está sujeto a inspección en sitio, ingeniería definitiva, verificación regulatoria y cotización formal de Energy Solutions Ecuador S.A.S."
+   },
+   "params_version": 1,
+   "solar_source": "Estimación regional conservadora",
+   "id": "8c35ee4f-f4c8-475c-9038-70a95bce8d58",
+   "code": "ESE-2026-000002",
+   "lead_id": "e2b1a15b-23a7-4fcd-859e-12110e8495a0",
+   "unlocked": true,
+   "visit_requested": false,
+   "created_at": "2026-11-24T16:12:04.253Z"
+  }
+ ],
+ "leads": [
+  {
+   "full_name": "Prueba QA",
+   "email": "qa@example.com",
+   "phone": "+593 99 999 9999",
+   "company": "Empresa QA",
+   "segment": "comercial",
+   "province": "Guayas",
+   "city": null,
+   "monthly_kwh": 14808,
+   "monthly_bill_usd": 1500,
+   "recommended_kwp": 112.52,
+   "estimated_investment_usd": 97825,
+   "source": "calculadora",
+   "utm": {
+    "utm_source": "google",
+    "utm_campaign": "test"
+   },
+   "id": "cd625d74-c2d8-4eea-b747-0c4927f02eb6",
+   "stage": "nuevo",
+   "advisor_id": null,
+   "created_at": "2026-11-24T16:04:58.494Z",
+   "next_activity_note": "Visita técnica solicitada: martes en la mañana",
+   "next_activity_at": "2026-11-24T16:05:11.298Z"
+  },
+  {
+   "full_name": "Cliente QA",
+   "email": "cliente@example.com",
+   "phone": "+593 98 765 4321",
+   "company": null,
+   "segment": "residencial",
+   "city": "Guayaquil",
+   "source": "tienda",
+   "utm": {},
+   "estimated_investment_usd": 0,
+   "id": "f04d1bcc-dae8-438e-8de6-efbbe4662654",
+   "stage": "nuevo",
+   "advisor_id": null,
+   "created_at": "2026-11-24T16:06:30.043Z"
+  },
+  {
+   "full_name": "María Pérez",
+   "email": "maria@example.com",
+   "phone": "+593 99 123 4567",
+   "company": "Hotel Prueba",
+   "segment": "comercial",
+   "province": "Manabí",
+   "city": null,
+   "monthly_kwh": 8385,
+   "monthly_bill_usd": 850,
+   "recommended_kwp": 67.86,
+   "estimated_investment_usd": 68830,
+   "source": "calculadora",
+   "utm": {},
+   "id": "e2b1a15b-23a7-4fcd-859e-12110e8495a0",
+   "stage": "nuevo",
+   "advisor_id": null,
+   "created_at": "2026-11-24T16:12:05.865Z"
+  },
+  {
+   "full_name": "Juan QA",
+   "email": "juan@example.com",
+   "phone": "0991234567",
+   "company": null,
+   "segment": "residencial",
+   "city": "Cuenca",
+   "source": "tienda",
+   "utm": {},
+   "estimated_investment_usd": 0,
+   "id": "1068d72b-0677-4825-be35-8897b5d6a1f6",
+   "stage": "nuevo",
+   "advisor_id": null,
+   "created_at": "2026-11-24T16:12:12.743Z"
+  },
+  {
+   "full_name": "Pedro Industria",
+   "email": "pedro@example.com",
+   "phone": null,
+   "company": null,
+   "segment": "industrial",
+   "province": null,
+   "city": null,
+   "monthly_bill_usd": 25000,
+   "source": "cotizacion",
+   "utm": {},
+   "notes": "Tema: Cotización de proyecto",
+   "id": "6080637e-b4cd-4f71-81fc-a1ee51d56c57",
+   "stage": "contactado",
+   "advisor_id": null,
+   "created_at": "2026-11-24T16:12:14.999Z",
+   "first_contact_at": "2026-11-24T16:12:35.458Z"
+  }
+ ],
+ "activities": [
+  {
+   "id": "4da309fc-83cf-4976-a2a8-fd83a250a00a",
+   "lead_id": "cd625d74-c2d8-4eea-b747-0c4927f02eb6",
+   "kind": "sistema",
+   "body": "Lead creado desde calculadora (política 2026-11-v1)",
+   "at": "2026-11-24T16:04:58.494Z",
+   "actor": null
+  },
+  {
+   "id": "9cdd5311-4799-49f6-acaf-ab1f528efcef",
+   "lead_id": "cd625d74-c2d8-4eea-b747-0c4927f02eb6",
+   "kind": "visita",
+   "body": "Cliente solicitó visita técnica desde el estudio ESE-2026-000001. martes en la mañana",
+   "at": "2026-11-24T16:05:11.299Z",
+   "actor": null
+  },
+  {
+   "id": "72d65cc9-97aa-42b9-816a-ef94e588356d",
+   "lead_id": "f04d1bcc-dae8-438e-8de6-efbbe4662654",
+   "kind": "sistema",
+   "body": "Lead creado desde tienda (política 2026-11-v1)",
+   "at": "2026-11-24T16:06:30.043Z",
+   "actor": null
+  },
+  {
+   "id": "1ece89d7-6a77-4d63-aa27-42190b48779c",
+   "lead_id": "e2b1a15b-23a7-4fcd-859e-12110e8495a0",
+   "kind": "sistema",
+   "body": "Lead creado desde calculadora (política 2026-11-v1)",
+   "at": "2026-11-24T16:12:05.865Z",
+   "actor": null
+  },
+  {
+   "id": "8dd50764-e9ae-43ee-a88b-573a01f2f7d2",
+   "lead_id": "1068d72b-0677-4825-be35-8897b5d6a1f6",
+   "kind": "sistema",
+   "body": "Lead creado desde tienda (política 2026-11-v1)",
+   "at": "2026-11-24T16:12:12.743Z",
+   "actor": null
+  },
+  {
+   "id": "7ade271d-cf02-4ac4-aec9-9ff7b2088f33",
+   "lead_id": "6080637e-b4cd-4f71-81fc-a1ee51d56c57",
+   "kind": "sistema",
+   "body": "Lead creado desde cotizacion (política 2026-11-v1)",
+   "at": "2026-11-24T16:12:14.999Z",
+   "actor": null
+  },
+  {
+   "id": "cf77a13d-e858-48e8-905c-eff4957520c9",
+   "lead_id": "6080637e-b4cd-4f71-81fc-a1ee51d56c57",
+   "kind": "cambio_etapa",
+   "body": "nuevo → contactado",
+   "at": "2026-11-24T16:12:35.458Z",
+   "actor": "dev-gerencia"
+  },
+  {
+   "id": "83a420f7-084c-4053-b585-f799968ccd76",
+   "lead_id": "6080637e-b4cd-4f71-81fc-a1ee51d56c57",
+   "kind": "nota",
+   "body": "Llamada inicial: interesado en 100 kWp",
+   "at": "2026-11-24T16:12:35.464Z",
+   "actor": "dev-gerencia"
+  }
+ ],
+ "consents": [
+  {
+   "purpose": "privacidad_servicio",
+   "granted": true,
+   "email": "qa@example.com",
+   "at": "2026-11-24T16:04:58.494Z"
+  },
+  {
+   "purpose": "comercial_marketing",
+   "granted": false,
+   "email": "qa@example.com",
+   "at": "2026-11-24T16:04:58.494Z"
+  },
+  {
+   "purpose": "privacidad_servicio",
+   "granted": true,
+   "email": "cliente@example.com",
+   "at": "2026-11-24T16:06:30.043Z"
+  },
+  {
+   "purpose": "comercial_marketing",
+   "granted": false,
+   "email": "cliente@example.com",
+   "at": "2026-11-24T16:06:30.043Z"
+  },
+  {
+   "purpose": "privacidad_servicio",
+   "granted": true,
+   "email": "maria@example.com",
+   "at": "2026-11-24T16:12:05.865Z"
+  },
+  {
+   "purpose": "comercial_marketing",
+   "granted": false,
+   "email": "maria@example.com",
+   "at": "2026-11-24T16:12:05.865Z"
+  },
+  {
+   "purpose": "privacidad_servicio",
+   "granted": true,
+   "email": "juan@example.com",
+   "at": "2026-11-24T16:12:12.743Z"
+  },
+  {
+   "purpose": "comercial_marketing",
+   "granted": false,
+   "email": "juan@example.com",
+   "at": "2026-11-24T16:12:12.743Z"
+  },
+  {
+   "purpose": "privacidad_servicio",
+   "granted": true,
+   "email": "pedro@example.com",
+   "at": "2026-11-24T16:12:14.999Z"
+  },
+  {
+   "purpose": "comercial_marketing",
+   "granted": false,
+   "email": "pedro@example.com",
+   "at": "2026-11-24T16:12:14.999Z"
+  }
+ ],
+ "products": [
+  {
+   "id": "prod-1",
+   "images": [],
+   "datasheet_url": null,
+   "certifications": [],
+   "promo_price": null,
+   "is_placeholder": true,
+   "published": true,
+   "sku": "EJ-PAN-580",
+   "slug": "ejemplo-panel-580w",
+   "name": "Panel monocristalino 580 W (EJEMPLO)",
+   "brand": null,
+   "model": "Ejemplo",
+   "category": "paneles-solares",
+   "summary": "Producto de ejemplo para pruebas de la tienda.",
+   "specs": {
+    "Potencia (W)": 580,
+    "Tecnología": "N-type bifacial"
+   },
+   "warranty": "Por definir",
+   "vat_rate": 0.15,
+   "stock": 0,
+   "availability": "consultar",
+   "installable": true,
+   "price": 0
+  },
+  {
+   "id": "prod-2",
+   "images": [],
+   "datasheet_url": null,
+   "certifications": [],
+   "promo_price": null,
+   "is_placeholder": true,
+   "published": true,
+   "sku": "EJ-INV-HYB-6",
+   "slug": "ejemplo-inversor-hibrido-6kw",
+   "name": "Inversor híbrido 6 kW (EJEMPLO)",
+   "brand": null,
+   "model": "Ejemplo",
+   "category": "inversores-hibridos",
+   "summary": "Producto de ejemplo para pruebas de la tienda.",
+   "specs": {
+    "Potencia (kW)": 6,
+    "Fases": "Monofásico"
+   },
+   "warranty": "Por definir",
+   "vat_rate": 0.15,
+   "stock": 0,
+   "availability": "consultar",
+   "installable": true,
+   "price": 0
+  },
+  {
+   "id": "prod-3",
+   "images": [],
+   "datasheet_url": null,
+   "certifications": [],
+   "promo_price": null,
+   "is_placeholder": true,
+   "published": true,
+   "sku": "EJ-BAT-5",
+   "slug": "ejemplo-bateria-litio-5kwh",
+   "name": "Batería LiFePO4 5 kWh (EJEMPLO)",
+   "brand": null,
+   "model": "Ejemplo",
+   "category": "baterias-de-litio",
+   "summary": "Producto de ejemplo para pruebas de la tienda.",
+   "specs": {
+    "Capacidad (kWh)": 5,
+    "Química": "LiFePO4"
+   },
+   "warranty": "Por definir",
+   "vat_rate": 0.15,
+   "stock": 0,
+   "availability": "consultar",
+   "installable": true,
+   "price": 0
+  }
+ ],
+ "orders": [
+  {
+   "lead_id": "f04d1bcc-dae8-438e-8de6-efbbe4662654",
+   "customer_name": "Cliente QA",
+   "email": "cliente@example.com",
+   "phone": "+593 98 765 4321",
+   "city": "Guayaquil",
+   "address": "Av. Principal 123",
+   "customer_type": "instalador",
+   "notes": null,
+   "needs_installation": true,
+   "subtotal": 0,
+   "tax": 0,
+   "total": 0,
+   "items": [
+    {
+     "product_id": "prod-1",
+     "sku": "EJ-PAN-580",
+     "name": "Panel monocristalino 580 W (EJEMPLO)",
+     "qty": 10,
+     "unit_price": 0,
+     "vat_rate": 0.15,
+     "line_subtotal": 0
+    },
+    {
+     "product_id": "prod-2",
+     "sku": "EJ-INV-HYB-6",
+     "name": "Inversor híbrido 6 kW (EJEMPLO)",
+     "qty": 1,
+     "unit_price": 0,
+     "vat_rate": 0.15,
+     "line_subtotal": 0
+    }
+   ],
+   "id": "53541815-1f31-4ca9-8737-bc1a978a8d36",
+   "number": "ESE-P-2026-001000",
+   "status": "nuevo",
+   "payment_reference": null,
+   "payment_verified_by": null,
+   "payment_verified_at": null,
+   "whatsapp_message": "*Pedido ESE-P-2026-001000* — Energy Solutions Ecuador\nCliente: Cliente QA (instalador)\n\n*Productos:*\n• 10 × Panel monocristalino 580 W (EJEMPLO) [EJ-PAN-580] — $0,00 c/u = $0,00\n• 1 × Inversor híbrido 6 kW (EJEMPLO) [EJ-INV-HYB-6] — $0,00 c/u = $0,00\n\nSubtotal: $0,00\nImpuestos: $0,00\n*Total estimado: $0,00*\n\nCiudad de entrega: Guayaquil\nRequiere instalación: Sí\n\nPrecios y disponibilidad sujetos a confirmación del asesor comercial.",
+   "created_at": "2026-11-24T16:06:30.044Z"
+  },
+  {
+   "lead_id": "1068d72b-0677-4825-be35-8897b5d6a1f6",
+   "customer_name": "Juan QA",
+   "email": "juan@example.com",
+   "phone": "0991234567",
+   "city": "Cuenca",
+   "address": "Av. Solano 1-23",
+   "customer_type": "final",
+   "notes": null,
+   "needs_installation": false,
+   "subtotal": 0,
+   "tax": 0,
+   "total": 0,
+   "items": [
+    {
+     "product_id": "prod-3",
+     "sku": "EJ-BAT-5",
+     "name": "Batería LiFePO4 5 kWh (EJEMPLO)",
+     "qty": 1,
+     "unit_price": 0,
+     "vat_rate": 0.15,
+     "line_subtotal": 0
+    }
+   ],
+   "id": "3b5c20e2-7de9-4c99-8d4e-120777501adb",
+   "number": "ESE-P-2026-001001",
+   "status": "nuevo",
+   "payment_reference": "TRX-998877",
+   "payment_verified_by": "dev-gerencia",
+   "payment_verified_at": "2026-11-24T16:12:29.978Z",
+   "whatsapp_message": "*Pedido ESE-P-2026-001001* — Energy Solutions Ecuador\nCliente: Juan QA (final)\n\n*Productos:*\n• 1 × Batería LiFePO4 5 kWh (EJEMPLO) [EJ-BAT-5] — precio a cotizar\n\nSubtotal: $0,00\nImpuestos: $0,00\n*Total estimado: $0,00* (+ productos por cotizar)\n\nCiudad de entrega: Cuenca\nRequiere instalación: No\n\nPrecios y disponibilidad sujetos a confirmación del asesor comercial.",
+   "created_at": "2026-11-24T16:12:12.744Z"
+  }
+ ],
+ "stats": [
+  {
+   "id": "stat-0",
+   "label": "MWp instalados",
+   "value": 0,
+   "unit": null,
+   "source_note": "PENDIENTE: dato real a ingresar por Gerencia",
+   "verified": false,
+   "sort": 0
+  },
+  {
+   "id": "stat-1",
+   "label": "Proyectos ejecutados",
+   "value": 0,
+   "unit": null,
+   "source_note": "PENDIENTE: dato real a ingresar por Gerencia",
+   "verified": false,
+   "sort": 1
+  },
+  {
+   "id": "stat-2",
+   "label": "Paneles solares instalados",
+   "value": 0,
+   "unit": null,
+   "source_note": "PENDIENTE: dato real a ingresar por Gerencia",
+   "verified": false,
+   "sort": 2
+  },
+  {
+   "id": "stat-3",
+   "label": "Toneladas de CO₂ evitadas",
+   "value": 0,
+   "unit": null,
+   "source_note": "PENDIENTE: dato real a ingresar por Gerencia",
+   "verified": false,
+   "sort": 3
+  },
+  {
+   "id": "stat-4",
+   "label": "Energía generada (MWh)",
+   "value": 0,
+   "unit": null,
+   "source_note": "PENDIENTE: dato real a ingresar por Gerencia",
+   "verified": false,
+   "sort": 4
+  },
+  {
+   "id": "stat-5",
+   "label": "Años de experiencia",
+   "value": 0,
+   "unit": null,
+   "source_note": "PENDIENTE: dato real a ingresar por Gerencia",
+   "verified": false,
+   "sort": 5
+  },
+  {
+   "id": "stat-6",
+   "label": "Clientes atendidos",
+   "value": 0,
+   "unit": null,
+   "source_note": "PENDIENTE: dato real a ingresar por Gerencia",
+   "verified": false,
+   "sort": 6
+  }
+ ],
+ "projects": [
+  {
+   "id": "prj-empacreci",
+   "slug": "empacreci",
+   "title": "Empacreci",
+   "client_name": null,
+   "segment": "industrial",
+   "industry": "Empacadora",
+   "province": null,
+   "city": null,
+   "lat": null,
+   "lng": null,
+   "location_authorized": false,
+   "capacity_kwp": null,
+   "inverter_kw": null,
+   "panel_count": null,
+   "installation_type": null,
+   "technology": [],
+   "annual_generation_kwh": null,
+   "generation_is_measured": false,
+   "annual_savings_usd": null,
+   "co2_avoided_t": null,
+   "executed_on": null,
+   "status": "finalizado",
+   "description": null,
+   "testimonial": null,
+   "testimonial_author": null,
+   "cover": null,
+   "published": false,
+   "featured": false,
+   "is_placeholder": true
+  },
+  {
+   "id": "prj-hotel-los-ceibos",
+   "slug": "hotel-los-ceibos",
+   "title": "Hotel Los Ceibos",
+   "client_name": null,
+   "segment": "comercial",
+   "industry": "Hotelería",
+   "province": null,
+   "city": null,
+   "lat": null,
+   "lng": null,
+   "location_authorized": false,
+   "capacity_kwp": null,
+   "inverter_kw": null,
+   "panel_count": null,
+   "installation_type": null,
+   "technology": [],
+   "annual_generation_kwh": null,
+   "generation_is_measured": false,
+   "annual_savings_usd": null,
+   "co2_avoided_t": null,
+   "executed_on": null,
+   "status": "finalizado",
+   "description": null,
+   "testimonial": null,
+   "testimonial_author": null,
+   "cover": null,
+   "published": false,
+   "featured": false,
+   "is_placeholder": true
+  },
+  {
+   "id": "prj-importadora-chinatown",
+   "slug": "importadora-chinatown",
+   "title": "Importadora Chinatown",
+   "client_name": null,
+   "segment": "comercial",
+   "industry": "Comercio",
+   "province": null,
+   "city": null,
+   "lat": null,
+   "lng": null,
+   "location_authorized": false,
+   "capacity_kwp": null,
+   "inverter_kw": null,
+   "panel_count": null,
+   "installation_type": null,
+   "technology": [],
+   "annual_generation_kwh": null,
+   "generation_is_measured": false,
+   "annual_savings_usd": null,
+   "co2_avoided_t": null,
+   "executed_on": null,
+   "status": "finalizado",
+   "description": null,
+   "testimonial": null,
+   "testimonial_author": null,
+   "cover": null,
+   "published": false,
+   "featured": false,
+   "is_placeholder": true
+  },
+  {
+   "id": "prj-productos-lacteos-gonzales",
+   "slug": "productos-lacteos-gonzales",
+   "title": "Productos Lácteos Gonzáles",
+   "client_name": null,
+   "segment": "industrial",
+   "industry": "Agroindustria láctea",
+   "province": null,
+   "city": null,
+   "lat": null,
+   "lng": null,
+   "location_authorized": false,
+   "capacity_kwp": null,
+   "inverter_kw": null,
+   "panel_count": null,
+   "installation_type": null,
+   "technology": [],
+   "annual_generation_kwh": null,
+   "generation_is_measured": false,
+   "annual_savings_usd": null,
+   "co2_avoided_t": null,
+   "executed_on": null,
+   "status": "finalizado",
+   "description": null,
+   "testimonial": null,
+   "testimonial_author": null,
+   "cover": null,
+   "published": false,
+   "featured": false,
+   "is_placeholder": true
+  },
+  {
+   "id": "prj-esheclabri",
+   "slug": "esheclabri",
+   "title": "ESHECLABRI",
+   "client_name": null,
+   "segment": "industrial",
+   "industry": "Por definir",
+   "province": null,
+   "city": null,
+   "lat": null,
+   "lng": null,
+   "location_authorized": false,
+   "capacity_kwp": null,
+   "inverter_kw": null,
+   "panel_count": null,
+   "installation_type": null,
+   "technology": [],
+   "annual_generation_kwh": null,
+   "generation_is_measured": false,
+   "annual_savings_usd": null,
+   "co2_avoided_t": null,
+   "executed_on": null,
+   "status": "finalizado",
+   "description": null,
+   "testimonial": null,
+   "testimonial_author": null,
+   "cover": null,
+   "published": false,
+   "featured": false,
+   "is_placeholder": true
+  }
+ ],
+ "brands": [
+  {
+   "id": "brand-0",
+   "slug": "kaco-new-energy-siemens",
+   "name": "KACO New Energy – Siemens",
+   "logo": null,
+   "description": null,
+   "relationship": null,
+   "relationship_verified": false,
+   "published": true
+  },
+  {
+   "id": "brand-1",
+   "slug": "ae-solar",
+   "name": "AE Solar",
+   "logo": null,
+   "description": null,
+   "relationship": null,
+   "relationship_verified": false,
+   "published": true
+  },
+  {
+   "id": "brand-2",
+   "slug": "huawei",
+   "name": "Huawei",
+   "logo": null,
+   "description": null,
+   "relationship": null,
+   "relationship_verified": false,
+   "published": true
+  },
+  {
+   "id": "brand-3",
+   "slug": "sma",
+   "name": "SMA",
+   "logo": null,
+   "description": null,
+   "relationship": null,
+   "relationship_verified": false,
+   "published": true
+  },
+  {
+   "id": "brand-4",
+   "slug": "fronius",
+   "name": "Fronius",
+   "logo": null,
+   "description": null,
+   "relationship": null,
+   "relationship_verified": false,
+   "published": true
+  },
+  {
+   "id": "brand-5",
+   "slug": "goodwe",
+   "name": "GoodWe",
+   "logo": null,
+   "description": null,
+   "relationship": null,
+   "relationship_verified": false,
+   "published": true
+  },
+  {
+   "id": "brand-6",
+   "slug": "deye",
+   "name": "Deye",
+   "logo": null,
+   "description": null,
+   "relationship": null,
+   "relationship_verified": false,
+   "published": true
+  },
+  {
+   "id": "brand-7",
+   "slug": "pylontech",
+   "name": "Pylontech",
+   "logo": null,
+   "description": null,
+   "relationship": null,
+   "relationship_verified": false,
+   "published": true
+  },
+  {
+   "id": "brand-8",
+   "slug": "byd",
+   "name": "BYD",
+   "logo": null,
+   "description": null,
+   "relationship": null,
+   "relationship_verified": false,
+   "published": true
+  },
+  {
+   "id": "brand-9",
+   "slug": "suntree",
+   "name": "Suntree",
+   "logo": null,
+   "description": null,
+   "relationship": null,
+   "relationship_verified": false,
+   "published": true
+  },
+  {
+   "id": "brand-10",
+   "slug": "acesco",
+   "name": "ACESCO",
+   "logo": null,
+   "description": null,
+   "relationship": null,
+   "relationship_verified": false,
+   "published": true
+  },
+  {
+   "id": "brand-11",
+   "slug": "alurack",
+   "name": "Alurack",
+   "logo": null,
+   "description": null,
+   "relationship": null,
+   "relationship_verified": false,
+   "published": true
+  }
+ ],
+ "messages": [
+  {
+   "channel": "email",
+   "to": "qa@example.com",
+   "template": "estudio_solar",
+   "payload": {
+    "subject": "Tu estudio energético ESE-2026-000001 — Energy Solutions Ecuador"
+   },
+   "status": "pendiente",
+   "error": "RESEND_API_KEY no configurada",
+   "at": "2026-11-24T16:04:58.857Z"
+  },
+  {
+   "channel": "email",
+   "to": "cliente@example.com",
+   "template": "pedido_recibido",
+   "payload": {
+    "subject": "Pedido ESE-P-2026-001000 recibido — Energy Solutions Ecuador"
+   },
+   "status": "pendiente",
+   "error": "RESEND_API_KEY no configurada",
+   "at": "2026-11-24T16:06:30.046Z"
+  },
+  {
+   "channel": "email",
+   "to": "maria@example.com",
+   "template": "estudio_solar",
+   "payload": {
+    "subject": "Tu estudio energético ESE-2026-000002 — Energy Solutions Ecuador"
+   },
+   "status": "pendiente",
+   "error": "RESEND_API_KEY no configurada",
+   "at": "2026-11-24T16:12:06.352Z"
+  },
+  {
+   "channel": "email",
+   "to": "juan@example.com",
+   "template": "pedido_recibido",
+   "payload": {
+    "subject": "Pedido ESE-P-2026-001001 recibido — Energy Solutions Ecuador"
+   },
+   "status": "pendiente",
+   "error": "RESEND_API_KEY no configurada",
+   "at": "2026-11-24T16:12:12.747Z"
+  },
+  {
+   "channel": "email",
+   "to": "pedro@example.com",
+   "template": "confirmacion_solicitud",
+   "payload": {
+    "subject": "Recibimos tu solicitud — Energy Solutions Ecuador"
+   },
+   "status": "pendiente",
+   "error": "RESEND_API_KEY no configurada",
+   "at": "2026-11-24T16:12:15.003Z"
+  }
+ ],
+ "events": [
+  {
+   "name": "calc_completed",
+   "props": {
+    "segment": "comercial",
+    "mode": "rapida"
+   },
+   "at": "2026-11-24T16:04:09.718Z"
+  },
+  {
+   "name": "lead_created",
+   "props": {
+    "source": "calculadora",
+    "segment": "comercial"
+   },
+   "at": "2026-11-24T16:04:58.495Z"
+  },
+  {
+   "name": "order_created",
+   "props": {
+    "total": 0,
+    "items": 2
+   },
+   "at": "2026-11-24T16:06:30.045Z"
+  },
+  {
+   "name": "page_view",
+   "props": {
+    "path": "/"
+   },
+   "at": "2026-11-24T16:11:59.198Z"
+  },
+  {
+   "name": "page_view",
+   "props": {
+    "path": "/calculadora"
+   },
+   "at": "2026-11-24T16:12:02.602Z"
+  },
+  {
+   "name": "calc_completed",
+   "props": {
+    "segment": "comercial",
+    "mode": "rapida"
+   },
+   "at": "2026-11-24T16:12:04.255Z"
+  },
+  {
+   "name": "lead_created",
+   "props": {
+    "source": "calculadora",
+    "segment": "comercial"
+   },
+   "at": "2026-11-24T16:12:05.866Z"
+  },
+  {
+   "name": "page_view",
+   "props": {
+    "path": "/calculadora/estudio/ESE-2026-000002"
+   },
+   "at": "2026-11-24T16:12:06.378Z"
+  },
+  {
+   "name": "page_view",
+   "props": {
+    "path": "/tienda/ejemplo-bateria-litio-5kwh"
+   },
+   "at": "2026-11-24T16:12:08.811Z"
+  },
+  {
+   "name": "page_view",
+   "props": {
+    "path": "/carrito"
+   },
+   "at": "2026-11-24T16:12:11.337Z"
+  },
+  {
+   "name": "order_created",
+   "props": {
+    "total": 0,
+    "items": 1
+   },
+   "at": "2026-11-24T16:12:12.746Z"
+  },
+  {
+   "name": "page_view",
+   "props": {
+    "path": "/contacto"
+   },
+   "at": "2026-11-24T16:12:13.660Z"
+  },
+  {
+   "name": "lead_created",
+   "props": {
+    "source": "cotizacion",
+    "segment": "industrial"
+   },
+   "at": "2026-11-24T16:12:15.001Z"
+  },
+  {
+   "name": "page_view",
+   "props": {
+    "path": "/soluciones/industrial"
+   },
+   "at": "2026-11-24T16:12:17.436Z"
+  },
+  {
+   "name": "page_view",
+   "props": {
+    "path": "/"
+   },
+   "at": "2026-11-24T16:12:42.396Z"
+  },
+  {
+   "name": "page_view",
+   "props": {
+    "path": "/calculadora"
+   },
+   "at": "2026-11-24T16:12:44.357Z"
+  },
+  {
+   "name": "page_view",
+   "props": {
+    "path": "/calculadora/estudio/ESE-2026-000002"
+   },
+   "at": "2026-11-24T16:13:21.226Z"
+  },
+  {
+   "name": "page_view",
+   "props": {
+    "path": "/"
+   },
+   "at": "2026-11-24T16:13:24.153Z"
+  },
+  {
+   "name": "page_view",
+   "props": {
+    "path": "/"
+   },
+   "at": "2026-11-24T16:13:26.545Z"
+  },
+  {
+   "name": "page_view",
+   "props": {
+    "path": "/"
+   },
+   "at": "2026-11-24T16:13:44.810Z"
+  },
+  {
+   "name": "page_view",
+   "props": {
+    "path": "/"
+   },
+   "at": "2026-11-24T16:13:53.417Z"
+  }
+ ],
+ "seq": {
+  "study": 2,
+  "order": 1001
+ },
+ "rl": {
+  "study:df331b4e5a74ede651c4a7be553273bd": {
+   "c": 3,
+   "t": 1795536249658
+  },
+  "unlock:df331b4e5a74ede651c4a7be553273bd": {
+   "c": 4,
+   "t": 1795536298433
+  },
+  "order:df331b4e5a74ede651c4a7be553273bd": {
+   "c": 3,
+   "t": 1795536390034
+  },
+  "track:df331b4e5a74ede651c4a7be553273bd": {
+   "c": 14,
+   "t": 1795536719194
+  },
+  "lead:df331b4e5a74ede651c4a7be553273bd": {
+   "c": 1,
+   "t": 1795536734994
+  }
+ }
+}
