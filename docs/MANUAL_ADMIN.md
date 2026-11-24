@@ -43,9 +43,19 @@ Campos clave: `pricing.pvTiers` (USD/kWp sin IVA por tramo), `pricing.batteryUsd
 
 **/admin/indicadores**: ingresa el valor real, su unidad y **la fuente del dato**, y marca *Verificado*. Solo los indicadores verificados aparecen en el contador de inicio.
 
-## Contenido, productos, proyectos, marcas y usuarios
+## Productos e inventario
 
-Hasta que se entreguen las pantallas de la fase 2, se gestionan desde **Supabase Studio → Table Editor** (tablas `content_blocks`, `products`, `product_prices`, `projects`, `brands`, `services`, `blog_posts`, `profiles`) y **Storage → public-media** para imágenes y fichas técnicas. Reglas que la base de datos hace cumplir:
+**/admin/productos** (roles *superadmin* y *compras*): lista con búsqueda y filtros (publicados, borradores, de ejemplo, sin stock), alta, edición y eliminación.
+
+- **Precios por nivel** (cliente final, instalador, distribuidor), en USD sin IVA. El precio final es obligatorio; 0 se muestra como «Precio a consultar». Un nivel vacío no se ofrece. La promoción debe ser menor al precio y vale hasta el final del día indicado (hora de Ecuador).
+- **Inventario**: «Disponible» exige stock mayor a 0; «Agotado» exige stock 0.
+- **Imágenes** (JPG, PNG o WebP, hasta 5 MB, máximo 12; la primera es la principal) y **ficha técnica** (PDF, hasta 15 MB) se guardan en el bucket `public-media` y se registran en `media`. El servidor verifica el contenido real del archivo, no solo su extensión.
+- Un **producto de ejemplo** no puede publicarse. Desmárcalo solo cuando los datos sean reales y verificados.
+- Un producto que figura en pedidos no se elimina: despublícalo para conservar el historial.
+
+## Contenido, proyectos, marcas y usuarios
+
+Hasta que se entreguen las pantallas de la fase 2, se gestionan desde **Supabase Studio → Table Editor** (tablas `content_blocks`, `projects`, `brands`, `services`, `blog_posts`, `profiles`) y **Storage → public-media** para imágenes y fichas técnicas. Reglas que la base de datos hace cumplir:
 
 - Un producto con `is_placeholder = true` no puede publicarse.
 - Un proyecto muestra el cliente solo con `client_name_authorized`, la ubicación en el mapa solo con `location_authorized` y el ahorro solo con `financials_authorized`.

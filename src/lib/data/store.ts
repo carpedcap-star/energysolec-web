@@ -6,9 +6,10 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { CalcParams, DEFAULT_PARAMS } from '../engine/params';
 import { DEFAULT_TARIFFS } from '../engine/default-tariffs';
 import type { Tariff } from '../engine/tariff';
-import type { Activity, Brand, Consent, Lead, LeadStage, Order, OrderStatus, Product, Project, Stat, Study } from './types';
+import type { Activity, Brand, Consent, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, Stat, Study, TierPrice } from './types';
 import { PAID_STATES } from './types';
 import { SEED_BRANDS, SEED_PRODUCTS, SEED_PROJECTS, SEED_STATS } from './seed';
+import { effectivePrice } from '../services/catalog';
 
 /**
  * Capa de acceso a datos del servidor. Dos implementaciones con la misma interfaz:
@@ -35,6 +36,15 @@ export interface Store {
   listProducts(opts?: { includeUnpublished?: boolean }): Promise<Product[]>;
   getProductsByIds(ids: string[]): Promise<Product[]>;
   getProductBySlug(slug: string): Promise<Product | null>;
+  // ---- Panel: catálogo (incluye borradores y todos los niveles de precio)
+  listProductRecords(): Promise<ProductRecord[]>;
+  getProductRecord(id: string): Promise<ProductRecord | null>;
+  /** Crea o actualiza (si trae id). Devuelve el id. Lanza Error con mensaje legible ante SKU/URL duplicados. */
+  saveProduct(p: ProductInput): Promise<string>;
+  /** Lanza Error si el producto figura en pedidos: en ese caso se despublica, no se elimina. */
+  deleteProduct(id: string): Promise<void>;
+  /** Sube un archivo ya validado al bucket public-media y lo registra en `media`. */
+  uploadMedia(f: { bytes: Uint8Array; mime: string; ext: string; kind: 'image' | 'document'; folder: string; alt: string | null }): Promise<MediaRef>;
   createOrder(o: Omit<Order, 'id' | 'number' | 'created_at' | 'status' | 'payment_reference' | 'payment_verified_by' | 'payment_verified_at' | 'whatsapp_message'>): Promise<Order>;
   setOrderWhatsapp(id: string, msg: string, channel: 'cloud_api' | 'wa_link'): Promise<void>;
   listOrders(): Promise<Order[]>;
@@ -43,7 +53,7 @@ export interface Store {
   listStats(): Promise<Stat[]>;
   saveStat(s: Stat): Promise<void>;
   listProjects(opts?: { includeUnpublished?: boolean }): Promise<Project[]>;
-  listBrands(): Promise<Brand[]>;
+  listBrands(opts?: { includeUnpublished?: boolean }): Promise<Brand[]>;
   getSetting<T>(key: string, fallback: T): Promise<T>;
   queueMessage(m: { channel: 'email' | 'whatsapp'; to: string; template: string; payload: unknown; status: string; error?: string }): Promise<void>;
   track(name: string, props?: Record<string, unknown>): Promise<void>;
@@ -57,25 +67,64 @@ const pad = (n: number) => String(n).padStart(6, '0');
 // ======================= Implementación de desarrollo =======================
 type DevDb = {
   params: CalcParams[]; tariffs: Tariff[]; studies: Study[]; leads: Lead[]; activities: Activity[];
-  consents: (Consent & { email: string; at: string })[]; products: Product[]; orders: Order[]; stats: Stat[];
+  consents: (Consent & { email: string; at: string })[]; products: DevProduct[]; orders: Order[]; stats: Stat[];
   projects: Project[]; brands: Brand[]; messages: unknown[]; events: { name: string; at: string; props?: unknown }[];
   seq: { study: number; order: number }; rl: Record<string, { c: number; t: number }>;
+  media: { id: string; bucket: string; path: string; kind: 'image' | 'document'; alt: string | null; created_at: string }[];
 };
+/** En el archivo local el producto guarda los precios por nivel y los ids de medios; `price`, `images`, etc. se derivan al leer. */
+type DevProduct = Product & { brand_id?: string | null; prices?: TierPrice[]; image_ids?: string[]; datasheet_id?: string | null; updated_at?: string | null };
+const DEV_MEDIA_DIR = path.join(process.cwd(), '.data', 'media');
+export const devMediaFile = (rel: string) => path.join(DEV_MEDIA_DIR, rel);
+const devMediaUrl = (rel: string) => `/api/dev-media/${rel}`;
+const devPrices = (p: DevProduct): TierPrice[] => p.prices ?? [{ tier: 'final', price: p.price, promo_price: p.promo_price, promo_until: null }];
+const devMediaRef = (db: DevDb, id: string): MediaRef | null => {
+  const m = db.media.find((x) => x.id === id);
+  return m ? { id: m.id, path: m.path, url: devMediaUrl(m.path), alt: m.alt } : null;
+};
+const devBrandName = (db: DevDb, p: DevProduct) => (p.brand_id !== undefined ? (p.brand_id ? db.brands.find((b) => b.id === p.brand_id)?.name ?? null : null) : p.brand);
+function devPublic(db: DevDb, p: DevProduct): Product {
+  const { brand_id: _b, prices: _p, image_ids, datasheet_id, updated_at: _u, ...base } = p;
+  const eff = effectivePrice(devPrices(p)) ?? { price: 0, promo_price: null };
+  return {
+    ...base, ...eff, brand: devBrandName(db, p),
+    images: image_ids ? image_ids.map((id) => devMediaRef(db, id)?.url).filter((u): u is string => !!u) : p.images,
+    datasheet_url: datasheet_id !== undefined ? (datasheet_id ? devMediaRef(db, datasheet_id)?.url ?? null : null) : p.datasheet_url,
+  };
+}
+function devRecord(db: DevDb, p: DevProduct): ProductRecord {
+  const { price: _pr, promo_price: _pp, images: _i, datasheet_url: _d, image_ids, datasheet_id, ...base } = p;
+  return {
+    ...base, brand: devBrandName(db, p), brand_id: p.brand_id ?? null, prices: devPrices(p), updated_at: p.updated_at ?? null,
+    images: (image_ids ?? []).map((id) => devMediaRef(db, id)).filter((m): m is MediaRef => !!m),
+    datasheet: datasheet_id ? devMediaRef(db, datasheet_id) : null,
+  };
+}
 const DEV_FILE = path.join(process.cwd(), '.data', 'dev-db.json');
 let devCache: DevDb | null = null;
 let devLock: Promise<unknown> = Promise.resolve();
 
 async function devLoad(): Promise<DevDb> {
   if (devCache) return devCache;
-  try { devCache = JSON.parse(await fs.readFile(DEV_FILE, 'utf8')); }
-  catch {
+  let raw: string | null = null;
+  try { raw = await fs.readFile(DEV_FILE, 'utf8'); }
+  catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
+  // Solo se crea una base nueva si el archivo no existe: un JSON dañado se reporta, nunca se sobrescribe con la semilla.
+  if (raw != null) { devCache = JSON.parse(raw) as DevDb; devCache.media ??= []; }
+  else {
     devCache = { params: [{ ...DEFAULT_PARAMS, version: 1 }], tariffs: DEFAULT_TARIFFS.map((t) => ({ ...t, id: randomUUID() })), studies: [], leads: [], activities: [], consents: [],
-      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {} };
+      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [] };
     await devSave();
   }
   return devCache!;
 }
-async function devSave() { await fs.mkdir(path.dirname(DEV_FILE), { recursive: true }); await fs.writeFile(DEV_FILE, JSON.stringify(devCache, null, 1)); }
+async function devSave() {
+  // Escritura atómica (archivo temporal + rename): una lectura concurrente nunca ve un JSON a medio escribir.
+  await fs.mkdir(path.dirname(DEV_FILE), { recursive: true });
+  const tmp = `${DEV_FILE}.${process.pid}.${randomUUID()}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify(devCache, null, 1));
+  await fs.rename(tmp, DEV_FILE);
+}
 function tx<T>(fn: (db: DevDb) => T | Promise<T>): Promise<T> {
   const run = devLock.then(async () => { const db = await devLoad(); const r = await fn(db); await devSave(); return r; });
   devLock = run.catch(() => undefined);
@@ -118,9 +167,43 @@ const devStore: Store = {
     const last = db.consents.filter((c) => c.email === email && c.purpose === 'comercial_marketing').at(-1);
     return !!last?.granted;
   }),
-  listProducts: (o) => tx((db) => db.products.filter((p) => o?.includeUnpublished || p.published)),
-  getProductsByIds: (ids) => tx((db) => db.products.filter((p) => ids.includes(p.id) && p.published)),
-  getProductBySlug: (slug) => tx((db) => db.products.find((p) => p.slug === slug && p.published) ?? null),
+  listProducts: (o) => tx((db) => db.products.filter((p) => o?.includeUnpublished || p.published).map((p) => devPublic(db, p))),
+  getProductsByIds: (ids) => tx((db) => db.products.filter((p) => ids.includes(p.id) && p.published).map((p) => devPublic(db, p))),
+  getProductBySlug: (slug) => tx((db) => { const p = db.products.find((x) => x.slug === slug && x.published); return p ? devPublic(db, p) : null; }),
+  listProductRecords: () => tx((db) => db.products.map((p) => devRecord(db, p)).sort((a, b) => a.name.localeCompare(b.name, 'es'))),
+  getProductRecord: (id) => tx((db) => { const p = db.products.find((x) => x.id === id); return p ? devRecord(db, p) : null; }),
+  saveProduct: (input) => tx((db) => {
+    const dup = db.products.find((x) => x.id !== input.id && (x.sku === input.sku || x.slug === input.slug));
+    if (dup) throw new Error(dup.sku === input.sku ? `Ya existe otro producto con el SKU ${input.sku}.` : `Ya existe otro producto con la URL /tienda/${input.slug}.`);
+    if (input.brand_id && !db.brands.some((b) => b.id === input.brand_id)) throw new Error('La marca seleccionada no existe.');
+    for (const id of [...input.image_ids, ...(input.datasheet_id ? [input.datasheet_id] : [])])
+      if (!db.media.some((m) => m.id === id)) throw new Error('Una de las imágenes o la ficha técnica ya no existe. Vuelve a cargarla.');
+    const { id, image_ids, datasheet_id, ...rest } = input;
+    const eff = effectivePrice(rest.prices) ?? { price: 0, promo_price: null };
+    const row: DevProduct = { ...rest, id: id ?? randomUUID(), brand: null, price: eff.price, promo_price: eff.promo_price, images: [], datasheet_url: null,
+      image_ids, datasheet_id, updated_at: new Date().toISOString() };
+    row.brand = devBrandName(db, row);
+    if (id) {
+      const i = db.products.findIndex((x) => x.id === id);
+      if (i < 0) throw new Error('Producto no encontrado.');
+      db.products[i] = row;
+    } else db.products.push(row);
+    return row.id;
+  }),
+  deleteProduct: (id) => tx((db) => {
+    if (db.orders.some((o) => o.items.some((i) => i.product_id === id))) throw new Error('Este producto figura en pedidos registrados: despublícalo en lugar de eliminarlo para conservar el historial.');
+    db.products = db.products.filter((p) => p.id !== id);
+  }),
+  uploadMedia: async (f) => {
+    const rel = `${f.folder}/${randomUUID()}.${f.ext}`;
+    await fs.mkdir(path.dirname(devMediaFile(rel)), { recursive: true });
+    await fs.writeFile(devMediaFile(rel), f.bytes);
+    return tx((db) => {
+      const m = { id: randomUUID(), bucket: 'public-media', path: rel, kind: f.kind, alt: f.alt, created_at: new Date().toISOString() };
+      db.media.push(m);
+      return { id: m.id, path: rel, url: devMediaUrl(rel), alt: m.alt };
+    });
+  },
   createOrder: (o) => tx((db) => {
     const ord: Order = { ...o, id: randomUUID(), number: `ESE-P-${year()}-${pad(++db.seq.order)}`, status: 'nuevo', payment_reference: null,
       payment_verified_by: null, payment_verified_at: null, whatsapp_message: '', created_at: new Date().toISOString() };
@@ -138,7 +221,7 @@ const devStore: Store = {
   listStats: () => tx((db) => [...db.stats].sort((a, b) => a.sort - b.sort)),
   saveStat: (s) => tx((db) => { const i = db.stats.findIndex((x) => x.id === s.id); if (i >= 0) db.stats[i] = s; else db.stats.push(s); }),
   listProjects: (o) => tx((db) => db.projects.filter((p) => o?.includeUnpublished || p.published)),
-  listBrands: () => tx((db) => db.brands.filter((b) => b.published)),
+  listBrands: (o) => tx((db) => db.brands.filter((b) => o?.includeUnpublished || b.published)),
   getSetting: async (_k, fallback) => fallback,
   queueMessage: (m) => tx((db) => { db.messages.push({ ...m, at: new Date().toISOString() }); }),
   track: (name, props) => tx((db) => { db.events.push({ name, props, at: new Date().toISOString() }); if (db.events.length > 5000) db.events.splice(0, 1000); }),
@@ -158,16 +241,46 @@ function must<T>(r: { data: T | null; error: { message: string } | null }): T {
   if (r.error) throw new Error(r.error.message);
   return r.data as T;
 }
-const mapProduct = (p: any): Product => ({
+// products.images (uuid[]) y products.datasheet (uuid) apuntan a la tabla `media`; las URL públicas salen de su `path` en public-media.
+const PUBLIC_BUCKET = 'public-media';
+const publicUrl = (p: string) => sb().storage.from(PUBLIC_BUCKET).getPublicUrl(p).data.publicUrl;
+async function mediaMap(ids: string[]): Promise<Map<string, MediaRef>> {
+  const uniq = [...new Set(ids.filter(Boolean))];
+  if (!uniq.length) return new Map();
+  const rows = must(await sb().from('media').select('id, path, alt').in('id', uniq)) as { id: string; path: string; alt: string | null }[];
+  return new Map(rows.map((r) => [r.id, { id: r.id, path: r.path, url: publicUrl(r.path), alt: r.alt }]));
+}
+const mediaIdsOf = (rows: any[]) => rows.flatMap((p) => [...((p.images ?? []) as string[]), ...(p.datasheet ? [p.datasheet as string] : [])]);
+const tierPrices = (p: any): TierPrice[] => ((p.product_prices ?? []) as any[]).map((x) => ({
+  tier: x.tier, price: Number(x.price), promo_price: x.promo_price == null ? null : Number(x.promo_price), promo_until: x.promo_until ?? null,
+}));
+const mapProduct = (p: any, media: Map<string, MediaRef>): Product => ({
   id: p.id, sku: p.sku, slug: p.slug, name: p.name, brand: p.brands?.name ?? null, model: p.model, category: p.product_categories?.slug ?? '',
   summary: p.summary, specs: p.specs ?? {}, warranty: p.warranty, certifications: p.certifications ?? [],
-  images: (p.images_paths ?? []) as string[], datasheet_url: p.datasheet_url ?? null, vat_rate: Number(p.vat_rate), stock: p.stock,
+  images: ((p.images ?? []) as string[]).map((id) => media.get(id)?.url).filter((u): u is string => !!u),
+  datasheet_url: p.datasheet ? media.get(p.datasheet)?.url ?? null : null, vat_rate: Number(p.vat_rate), stock: p.stock,
   availability: p.availability, installable: p.installable,
-  price: Number(p.product_prices?.find((x: any) => x.tier === 'final')?.price ?? 0),
-  promo_price: (() => { const f = p.product_prices?.find((x: any) => x.tier === 'final'); return f?.promo_price && (!f.promo_until || Date.parse(f.promo_until) > Date.now()) ? Number(f.promo_price) : null; })(),
+  ...(effectivePrice(tierPrices(p)) ?? { price: 0, promo_price: null }),
   is_placeholder: p.is_placeholder, published: p.published,
 });
+const mapRecord = (p: any, media: Map<string, MediaRef>): ProductRecord => ({
+  id: p.id, sku: p.sku, slug: p.slug, name: p.name, brand_id: p.brand_id ?? null, brand: p.brands?.name ?? null, model: p.model,
+  category: p.product_categories?.slug ?? '', summary: p.summary, specs: p.specs ?? {}, warranty: p.warranty, certifications: p.certifications ?? [],
+  vat_rate: Number(p.vat_rate), stock: p.stock, availability: p.availability, installable: p.installable, is_placeholder: p.is_placeholder,
+  published: p.published, prices: tierPrices(p), updated_at: p.updated_at ?? null,
+  images: ((p.images ?? []) as string[]).map((id) => media.get(id)).filter((m): m is MediaRef => !!m),
+  datasheet: p.datasheet ? media.get(p.datasheet) ?? null : null,
+});
+async function mapProducts(rows: any[]) { const m = await mediaMap(mediaIdsOf(rows)); return rows.map((r) => mapProduct(r, m)); }
 const PRODUCT_SELECT = '*, brands(name), product_categories(slug), product_prices(tier, price, promo_price, promo_until)';
+const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+/** Traduce las restricciones de Postgres a mensajes para el panel. */
+function productDbError(e: { code?: string; message: string }): Error {
+  if (e.code === '23505') return new Error(e.message.includes('sku') ? 'Ya existe otro producto con ese SKU.' : e.message.includes('slug') ? 'Ya existe otro producto con esa URL.' : 'Registro duplicado.');
+  if (e.code === '23514' && e.message.includes('no_placeholder_published')) return new Error('Un producto de ejemplo no puede publicarse.');
+  if (e.code === '23503') return new Error('Este producto figura en pedidos registrados: despublícalo en lugar de eliminarlo para conservar el historial.');
+  return new Error(e.message);
+}
 
 const supabaseStore: Store = {
   kind: 'supabase',
@@ -225,10 +338,53 @@ const supabaseStore: Store = {
   async listProducts(o) {
     let q = sb().from('products').select(PRODUCT_SELECT).order('name');
     if (!o?.includeUnpublished) q = q.eq('published', true);
-    return (must(await q) as any[]).map(mapProduct);
+    return mapProducts(must(await q) as any[]);
   },
-  async getProductsByIds(ids) { return (must(await sb().from('products').select(PRODUCT_SELECT).in('id', ids).eq('published', true)) as any[]).map(mapProduct); },
-  async getProductBySlug(slug) { const r = must(await sb().from('products').select(PRODUCT_SELECT).eq('slug', slug).eq('published', true).maybeSingle()); return r ? mapProduct(r) : null; },
+  async getProductsByIds(ids) {
+    const valid = ids.filter(isUuid);
+    return valid.length ? mapProducts(must(await sb().from('products').select(PRODUCT_SELECT).in('id', valid).eq('published', true)) as any[]) : [];
+  },
+  async getProductBySlug(slug) { const r = must(await sb().from('products').select(PRODUCT_SELECT).eq('slug', slug).eq('published', true).maybeSingle()); return r ? (await mapProducts([r]))[0] : null; },
+  async listProductRecords() {
+    const rows = must(await sb().from('products').select(PRODUCT_SELECT).order('name')) as any[];
+    const m = await mediaMap(mediaIdsOf(rows));
+    return rows.map((r) => mapRecord(r, m));
+  },
+  async getProductRecord(id) {
+    if (!isUuid(id)) return null;
+    const r = must(await sb().from('products').select(PRODUCT_SELECT).eq('id', id).maybeSingle());
+    return r ? mapRecord(r, await mediaMap(mediaIdsOf([r]))) : null;
+  },
+  async saveProduct(input) {
+    const c = sb();
+    const cat = must(await c.from('product_categories').select('id').eq('slug', input.category).maybeSingle()) as { id: string } | null;
+    if (!cat) throw new Error('La categoría no existe en la base de datos.');
+    const { id, prices, category: _c, image_ids, datasheet_id, ...rest } = input;
+    const row = { ...rest, category_id: cat.id, images: image_ids, datasheet: datasheet_id };
+    const r = id ? await c.from('products').update(row).eq('id', id).select('id').maybeSingle() : await c.from('products').insert(row).select('id').single();
+    if (r.error) throw productDbError(r.error);
+    if (!r.data) throw new Error('Producto no encontrado.');
+    const pid = (r.data as { id: string }).id;
+    // Precios por nivel: se actualizan los ofrecidos y se eliminan los que ya no se ofrecen.
+    const up = await c.from('product_prices').upsert(prices.map((t) => ({ product_id: pid, ...t })), { onConflict: 'product_id,tier' });
+    if (up.error) throw productDbError(up.error);
+    const drop = (['final', 'instalador', 'distribuidor'] as const).filter((t) => !prices.some((x) => x.tier === t));
+    if (drop.length) { const d = await c.from('product_prices').delete().eq('product_id', pid).in('tier', drop); if (d.error) throw productDbError(d.error); }
+    return pid;
+  },
+  async deleteProduct(id) {
+    const r = await sb().from('products').delete().eq('id', id);
+    if (r.error) throw productDbError(r.error);
+  },
+  async uploadMedia(f) {
+    const c = sb();
+    const p = `${f.folder}/${randomUUID()}.${f.ext}`;
+    const up = await c.storage.from(PUBLIC_BUCKET).upload(p, f.bytes, { contentType: f.mime, upsert: false, cacheControl: '31536000' });
+    if (up.error) throw new Error(`No se pudo subir el archivo: ${up.error.message}`);
+    const m = await c.from('media').insert({ bucket: PUBLIC_BUCKET, path: p, kind: f.kind, alt: f.alt }).select('id').single();
+    if (m.error) { await c.storage.from(PUBLIC_BUCKET).remove([p]); throw new Error(m.error.message); }
+    return { id: (m.data as { id: string }).id, path: p, url: publicUrl(p), alt: f.alt };
+  },
   async createOrder(o) {
     const c = sb();
     const { items, ...head } = o;
@@ -252,7 +408,11 @@ const supabaseStore: Store = {
     if (!o?.includeUnpublished) q = q.eq('published', true);
     return (must(await q) as any[]).map((p) => ({ ...p, client_name: p.client_name_authorized ? p.client_name : null, annual_savings_usd: p.financials_authorized ? p.annual_savings_usd : null, is_placeholder: false })) as Project[];
   },
-  async listBrands() { return must(await sb().from('brands').select('*').eq('published', true).order('sort')) as Brand[]; },
+  async listBrands(o) {
+    let q = sb().from('brands').select('*').order('sort');
+    if (!o?.includeUnpublished) q = q.eq('published', true);
+    return must(await q) as Brand[];
+  },
   async getSetting(key, fallback) { const r = await sb().from('site_settings').select('value').eq('key', key).maybeSingle(); return (r.data?.value ?? fallback) as any; },
   async queueMessage(m) { await sb().from('outbound_messages').insert({ channel: m.channel, to_address: m.to, template: m.template, payload: m.payload, status: m.status, error: m.error }); },
   async track(name, props) { await sb().from('events').insert({ name, props, path: (props?.path as string) ?? null }); },

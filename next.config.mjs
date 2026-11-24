@@ -10,6 +10,8 @@ export default {
   reactStrictMode: true,
   poweredByHeader: false,
   serverExternalPackages: ['@react-pdf/renderer'],
+  // Carga de imágenes y fichas técnicas desde el panel (cada archivo se valida en servidor: 5 MB imagen, 15 MB PDF).
+  experimental: { serverActions: { bodySizeLimit: '25mb' } },
   images: { remotePatterns: [{ protocol: 'https', hostname: '*.supabase.co' }] },
   async headers() { return [{ source: '/(.*)', headers: securityHeaders }]; },
 };

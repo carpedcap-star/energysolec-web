@@ -6,6 +6,7 @@ import { requireStaff, signIn, signOut, can } from '@/lib/auth';
 import { getStore } from '@/lib/data/store';
 import { CalcParams } from '@/lib/engine/params';
 import { LEAD_STAGES, ORDER_STATUSES, PAID_STATES, type AppRole } from '@/lib/data/types';
+import { checkUpload, parseProductForm, UPLOAD_LIMITS, type SniffedType } from '@/lib/services/catalog';
 
 export async function loginAction(_: unknown, fd: FormData) {
   const err = await signIn(String(fd.get('email') ?? ''), String(fd.get('password') ?? ''), (fd.get('role') as AppRole) || 'superadmin');
@@ -88,4 +89,64 @@ export async function saveStatAction(fd: FormData) {
     .parse({ id: fd.get('id'), label: fd.get('label'), value: fd.get('value'), unit: fd.get('unit') || undefined, source_note: fd.get('source_note'), verified: fd.get('verified') === 'on', sort: fd.get('sort') });
   await getStore().saveStat({ ...s, unit: s.unit ?? null });
   revalidatePath('/admin/indicadores'); revalidatePath('/');
+}
+
+// ---------------------------------------------------------------- Productos
+const files = (v: FormDataEntryValue[]) => v.filter((f): f is File => f instanceof File && f.size > 0);
+function revalidateCatalog(...slugs: (string | undefined)[]) {
+  revalidatePath('/admin/productos'); revalidatePath('/tienda'); revalidatePath('/sitemap.xml');
+  for (const s of new Set(slugs.filter(Boolean))) revalidatePath(`/tienda/${s}`);
+}
+
+export async function saveProductAction(_: unknown, fd: FormData): Promise<{ error?: string }> {
+  await requireStaff('products');
+  const parsed = parseProductForm(fd);
+  if ('error' in parsed) return { error: parsed.error };
+  const input = parsed.data;
+  const store = getStore();
+  const prev = input.id ? await store.getProductRecord(input.id) : null;
+  if (input.id && !prev) return { error: 'Producto no encontrado.' };
+
+  // Solo se conservan medios que ya pertenecen a este producto: no se puede enlazar un id ajeno desde el formulario.
+  const ownImages = new Set(prev?.images.map((m) => m.id));
+  if (input.image_ids.some((id) => !ownImages.has(id))) return { error: 'Las imágenes cambiaron mientras editabas. Recarga la página.' };
+  if (input.datasheet_id && input.datasheet_id !== prev?.datasheet?.id) return { error: 'La ficha técnica cambió mientras editabas. Recarga la página.' };
+
+  // Todos los archivos se validan (firma binaria y tamaño) antes de subir cualquiera.
+  const newImages = files(fd.getAll('new_images'));
+  const newSheet = files(fd.getAll('new_datasheet'))[0] ?? null;
+  if (input.image_ids.length + newImages.length > UPLOAD_LIMITS.maxImages) return { error: `Máximo ${UPLOAD_LIMITS.maxImages} imágenes por producto.` };
+  const checked: { bytes: Uint8Array; t: SniffedType }[] = [];
+  for (const f of newImages) {
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    const t = checkUpload(bytes, 'image', f.name);
+    if (typeof t === 'string') return { error: t };
+    checked.push({ bytes, t });
+  }
+  let sheet: { bytes: Uint8Array; t: SniffedType } | null = null;
+  if (newSheet) {
+    const bytes = new Uint8Array(await newSheet.arrayBuffer());
+    const t = checkUpload(bytes, 'document', newSheet.name);
+    if (typeof t === 'string') return { error: t };
+    sheet = { bytes, t };
+  }
+
+  let id: string;
+  try {
+    for (const c of checked) input.image_ids.push((await store.uploadMedia({ bytes: c.bytes, mime: c.t.mime, ext: c.t.ext, kind: 'image', folder: 'products', alt: input.name })).id);
+    if (sheet) input.datasheet_id = (await store.uploadMedia({ bytes: sheet.bytes, mime: sheet.t.mime, ext: sheet.t.ext, kind: 'document', folder: 'datasheets', alt: `Ficha técnica ${input.name}` })).id;
+    id = await store.saveProduct(input);
+  } catch (e) { return { error: (e as Error).message }; }
+  revalidateCatalog(prev?.slug, input.slug);
+  redirect(`/admin/productos/${id}?guardado=1`);
+}
+
+export async function deleteProductAction(id: string, _: unknown, _fd: FormData): Promise<{ error?: string }> {
+  await requireStaff('products');
+  const store = getStore();
+  const prev = await store.getProductRecord(id);
+  if (!prev) return { error: 'Producto no encontrado.' };
+  try { await store.deleteProduct(id); } catch (e) { return { error: (e as Error).message }; }
+  revalidateCatalog(prev.slug);
+  redirect(`/admin/productos?eliminado=${encodeURIComponent(prev.sku)}`);
 }

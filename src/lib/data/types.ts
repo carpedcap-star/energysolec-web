@@ -40,7 +40,28 @@ export type Product = {
   price: number; promo_price: number | null; is_placeholder: boolean; published: boolean;
 };
 
-export type OrderItem = { product_id: string; sku: string; name: string; qty: number; unit_price: number; vat_rate: number; line_subtotal: number };
+export type PriceTier = 'final' | 'instalador' | 'distribuidor';
+export const PRICE_TIERS: { id: PriceTier; label: string }[] = [
+  { id: 'final', label: 'Cliente final' }, { id: 'instalador', label: 'Instalador' }, { id: 'distribuidor', label: 'Distribuidor' },
+];
+export type TierPrice = { tier: PriceTier; price: number; promo_price: number | null; promo_until: string | null };
+export type Availability = Product['availability'];
+export const AVAILABILITY: { id: Availability; label: string }[] = [
+  { id: 'disponible', label: 'Disponible' }, { id: 'bajo_pedido', label: 'Bajo pedido' }, { id: 'agotado', label: 'Agotado' }, { id: 'consultar', label: 'Consultar' },
+];
+/** Archivo del bucket public-media registrado en la tabla `media`. */
+export type MediaRef = { id: string; path: string; url: string; alt: string | null };
+
+/** Vista completa de un producto para el panel: todos los niveles de precio y los medios con su id. */
+export type ProductRecord = Omit<Product, 'price' | 'promo_price' | 'images' | 'datasheet_url'> & {
+  brand_id: string | null; prices: TierPrice[]; images: MediaRef[]; datasheet: MediaRef | null; updated_at: string | null;
+};
+/** Datos que el panel envía para crear o actualizar un producto (ya validados con Zod). */
+export type ProductInput = Omit<ProductRecord, 'id' | 'brand' | 'images' | 'datasheet' | 'updated_at'> & {
+  id?: string; image_ids: string[]; datasheet_id: string | null;
+};
+
+export type OrderItem ={ product_id: string; sku: string; name: string; qty: number; unit_price: number; vat_rate: number; line_subtotal: number };
 export type Order = {
   id: string; number: string; lead_id: string | null; customer_name: string; email: string; phone: string; city: string; address: string;
   customer_type: 'final' | 'instalador' | 'distribuidor' | 'empresa'; notes: string | null; needs_installation: boolean;

@@ -17,6 +17,7 @@ export const PERMS = {
   tariffs: ['superadmin', 'gerencia', 'ingenieria'],
   stats: ['superadmin', 'gerencia'],
   export: ['superadmin', 'gerencia', 'marketing'],
+  products: ['superadmin', 'compras'],   // RLS: products, product_prices, media (public-media)
 } satisfies Record<string, AppRole[]>;
 export type Perm = keyof typeof PERMS;
 export const can = (s: Staff | null, p: Perm) => !!s && (PERMS[p] as AppRole[]).includes(s.role);

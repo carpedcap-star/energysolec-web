@@ -72,7 +72,7 @@ Next.js 15 App Router · TypeScript estricto · Tailwind 3 · Supabase (Postgres
 
 ## Siguiente trabajo (Fase 2, en orden sugerido)
 
-1. Panel: CRUD de productos, con precios por nivel, inventario, imágenes y ficha técnica en el bucket `public-media`.
+1. ✅ Panel: CRUD de productos, con precios por nivel, inventario, imágenes y ficha técnica en el bucket `public-media` (`/admin/productos`; lógica pura y pruebas en `src/lib/services/catalog.ts`; en desarrollo los archivos van a `.data/media/` y se sirven por `/api/dev-media`).
 2. Panel: CRUD de proyectos, con galería, banderas de autorización y coordenadas para el mapa.
 3. Panel: bloques de contenido (`content_blocks`) y que las páginas públicas lean de ahí, con fallback a `src/content/`.
 4. Panel: marcas (con documento de respaldo), servicios, blog, usuarios y roles, identidad gráfica (`site_settings.brand` → variables CSS).
