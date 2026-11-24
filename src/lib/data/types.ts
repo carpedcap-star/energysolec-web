@@ -97,3 +97,6 @@ export type Brand = { id: string; slug: string; name: string; logo: string | nul
 export type Consent = { purpose: 'privacidad_servicio' | 'comercial_marketing'; granted: boolean };
 export type Staff = { id: string; email: string; full_name: string; role: AppRole };
 export type Activity = { id: string; lead_id: string; kind: string; body: string | null; at: string; actor: string | null };
+
+/** Fila de `content_blocks`. `data` se valida y combina con el texto base al leerla (src/content/blocks.ts). */
+export type ContentBlockRow = { page: string; slot: string; data: unknown; is_placeholder: boolean; published: boolean; updated_at: string | null };

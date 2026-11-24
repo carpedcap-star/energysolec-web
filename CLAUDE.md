@@ -31,7 +31,7 @@ Next.js 15 App Router · TypeScript estricto · Tailwind 3 · Supabase (Postgres
 - `src/app/admin/actions.ts` — server actions del panel; cada una empieza con `requireStaff`.
 - `supabase/migrations/` — nunca edites una migración ya aplicada en producción; crea la siguiente (`0004_*.sql`).
 - Modo desarrollo: React 19 envía al navegador el valor de cada E/S asíncrona que espera un componente de servidor (para DevTools). Por eso el almacén local lee su archivo con `readFileSync`. En producción no ocurre, pero no conectes `next dev` a datos reales sensibles.
-- `src/content/segments.ts` — textos base de las unidades de negocio y la lista de servicios.
+- `src/content/segments.ts` — textos base de las unidades de negocio y la lista de servicios. `src/content/blocks.ts` — bloques editables desde el panel y su texto base.
 
 ## Reglas de negocio NO negociables
 
@@ -75,7 +75,7 @@ Next.js 15 App Router · TypeScript estricto · Tailwind 3 · Supabase (Postgres
 
 1. ✅ Panel: CRUD de productos, con precios por nivel, inventario, imágenes y ficha técnica en el bucket `public-media` (`/admin/productos`; lógica pura y pruebas en `src/lib/services/catalog.ts`; en desarrollo los archivos van a `.data/media/` y se sirven por `/api/dev-media`).
 2. ✅ Panel: CRUD de proyectos, con galería, banderas de autorización y coordenadas para el mapa (`/admin/proyectos`; enmascarado y validación en `src/lib/services/projects.ts`; migración `0003_project_privacy.sql`).
-3. Panel: bloques de contenido (`content_blocks`) y que las páginas públicas lean de ahí, con fallback a `src/content/`.
+3. ✅ Panel: bloques de contenido (`/admin/contenido`). Registro de bloques, campos y texto base en `src/content/blocks.ts`; las páginas leen con `getBlock(page, slot)` (`src/lib/content.ts`), que cae al texto base campo a campo. Para un bloque nuevo: regístralo en `BLOCKS` y léelo con `getBlock`; la prueba exige que su texto base sea válido.
 4. Panel: marcas (con documento de respaldo), servicios, blog, usuarios y roles, identidad gráfica (`site_settings.brand` → variables CSS).
 5. Formularios guiados por campo para parámetros y tarifas (hoy son editores JSON validados con Zod).
 6. Carga de planilla en PDF o foto con extracción por IA y confirmación del cliente (`bill_uploads`, bucket `bills`).

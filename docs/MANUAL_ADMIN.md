@@ -62,9 +62,20 @@ Campos clave: `pricing.pvTiers` (USD/kWp sin IVA por tramo), `pricing.batteryUsd
 - Coordenadas: pega «lat, lng» desde Google Maps en el campo Latitud. Deben estar dentro del Ecuador (incluye Galápagos).
 - Fotos: una portada y hasta 20 fotos de galería (JPG, PNG o WebP, 5 MB). La portada del sitio muestra los 3 destacados más recientes.
 
-## Contenido, marcas y usuarios
+## Contenido del sitio
 
-Hasta que se entreguen las pantallas de la fase 2, se gestionan desde **Supabase Studio → Table Editor** (tablas `content_blocks`, `brands`, `services`, `blog_posts`, `profiles`) y **Storage → public-media** para imágenes y fichas técnicas. Reglas que la base de datos hace cumplir:
+**/admin/contenido** (roles *superadmin* y *marketing*): textos e imágenes de la portada, las páginas de soluciones y «Nosotros».
+
+- Cada bloque parte de su **texto base** (el texto original del sitio). Al guardar con **Publicar** marcado, la web muestra tu versión; sin marcar, queda como **borrador** y la web sigue con el texto base.
+- **Restaurar texto base** descarta la versión guardada.
+- Los campos tienen límite de caracteres (el contador lo muestra) y algunas listas tienen cantidad fija porque cada elemento lleva su ícono.
+- **Provisional**: en «Nosotros», la página muestra la etiqueta «Contenido provisional» mientras esté marcado. Desmárcalo solo con información oficial.
+- No escribas cifras, certificaciones ni relaciones con marcas sin respaldo documental (regla «Nada inventado»).
+- La foto de fondo de la portada es opcional; sin ella se muestra el fondo gráfico.
+
+## Marcas y usuarios
+
+Hasta que se entreguen las pantallas de la fase 2, se gestionan desde **Supabase Studio → Table Editor** (tablas `brands`, `services`, `blog_posts`, `profiles`) y **Storage → public-media** para imágenes y fichas técnicas. Reglas que la base de datos hace cumplir:
 
 - Un producto con `is_placeholder = true` no puede publicarse.
 - Un proyecto muestra el cliente solo con `client_name_authorized`, la ubicación en el mapa solo con `location_authorized`, el ahorro solo con `financials_authorized` y el testimonio solo con `testimonial_verified` (vista `projects_public`; la clave pública no puede leer esas columnas de la tabla).

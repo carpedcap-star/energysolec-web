@@ -6,29 +6,33 @@ import { LeadForm } from '@/components/lead-form';
 import { getStore } from '@/lib/data/store';
 import { IconArrow, IconBolt } from '@/components/icons';
 import { fmtKwp } from '@/lib/format';
+import { getBlock } from '@/lib/content';
 
 export const revalidate = 300;
 export const generateStaticParams = () => SEGMENTS.map((s) => ({ segmento: s.slug }));
 export async function generateMetadata({ params }: { params: Promise<{ segmento: string }> }): Promise<Metadata> {
   const { segmento } = await params;
   const s = SEGMENTS.find((x) => x.slug === segmento);
-  return s ? { title: `Energía solar ${s.name.toLowerCase()} en Ecuador`, description: s.lead, alternates: { canonical: `/soluciones/${s.slug}` } } : {};
+  if (!s) return {};
+  const b = await getBlock(`soluciones-${s.slug}`, 'main');
+  return { title: `Energía solar ${s.name.toLowerCase()} en Ecuador`, description: b.text('lead'), alternates: { canonical: `/soluciones/${s.slug}` } };
 }
 
 export default async function SegmentPage({ params }: { params: Promise<{ segmento: string }> }) {
   const { segmento } = await params;
   const s = SEGMENTS.find((x) => x.slug === segmento);
   if (!s) notFound();
-  const projects = (await getStore().listProjects()).filter((p) => p.segment === s.slug).slice(0, 3);
+  const [all, b] = await Promise.all([getStore().listProjects(), getBlock(`soluciones-${s.slug}`, 'main')]);
+  const projects = all.filter((p) => p.segment === s.slug).slice(0, 3);
   const industrial = s.slug === 'industrial';
   return (
     <>
       <section className={`${industrial ? 'bg-brand-dark text-white' : 'bg-white'} pb-20 pt-36`}>
         <div className="container-site">
-          <p className={`eyebrow ${industrial ? '!text-brand' : ''}`}>{s.eyebrow}</p>
-          <h1 className="font-display mt-4 max-w-4xl text-4xl font-extrabold leading-[1.05] sm:text-6xl">{s.title}</h1>
-          <p className={`mt-6 max-w-2xl text-lg leading-relaxed ${industrial ? 'text-white/70' : 'text-muted'}`}>{s.lead}</p>
-          <div className="mt-8 flex flex-wrap gap-2">{s.audience.map((a) => <span key={a} className={`rounded-full border px-3 py-1 text-sm ${industrial ? 'border-white/15 text-white/75' : 'border-line text-muted'}`}>{a}</span>)}</div>
+          <p className={`eyebrow ${industrial ? '!text-brand' : ''}`}>{b.text('eyebrow')}</p>
+          <h1 className="font-display mt-4 max-w-4xl break-words text-4xl font-extrabold leading-[1.05] max-sm:hyphens-auto sm:text-6xl">{b.text('title')}</h1>
+          <p className={`mt-6 max-w-2xl text-lg leading-relaxed ${industrial ? 'text-white/70' : 'text-muted'}`}>{b.text('lead')}</p>
+          <div className="mt-8 flex flex-wrap gap-2">{b.list('audience').map((a) => <span key={a} className={`rounded-full border px-3 py-1 text-sm ${industrial ? 'border-white/15 text-white/75' : 'border-line text-muted'}`}>{a}</span>)}</div>
           <div className="mt-10 flex flex-wrap gap-3"><Link href={`/calculadora?segmento=${s.slug}`} className="btn-primary">Calcular mi ahorro</Link><a href="#cotizar" className={industrial ? 'btn-ghost-dark' : 'btn-ghost'}>Solicitar propuesta</a></div>
         </div>
       </section>
@@ -53,8 +57,8 @@ export default async function SegmentPage({ params }: { params: Promise<{ segmen
           <p className="eyebrow">Soluciones</p>
           <h2 className="font-display mt-3 text-3xl font-bold">Lo que hacemos por ti</h2>
           <div className="mt-10 grid gap-px overflow-hidden rounded-3xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-3">
-            {s.solutions.map((x, i) => (
-              <div key={x.title} className="bg-white p-7">
+            {b.items('solutions').map((x, i) => (
+              <div key={i} className="bg-white p-7">
                 <p className="font-display text-sm font-bold text-brand-accent">{String(i + 1).padStart(2, '0')}</p>
                 <p className="mt-3 font-semibold">{x.title}</p><p className="mt-2 text-sm leading-relaxed text-muted">{x.text}</p>
               </div>
@@ -73,9 +77,9 @@ export default async function SegmentPage({ params }: { params: Promise<{ segmen
       <section id="cotizar" className="scroll-mt-20 bg-brand-dark py-20">
         <div className="container-site grid gap-10 lg:grid-cols-[1fr_1.4fr]">
           <div className="text-white">
-            <p className="eyebrow !text-brand">{s.eyebrow}</p>
-            <h2 className="font-display mt-3 text-3xl font-bold">{s.formTitle}</h2>
-            <p className="mt-4 text-white/70">{industrial ? 'Comparte tu planilla, curva de carga o información del sitio. Nuestro equipo de ingeniería evaluará tu caso.' : 'Un asesor revisará tu caso y te contactará con una propuesta.'}</p>
+            <p className="eyebrow !text-brand">{b.text('eyebrow')}</p>
+            <h2 className="font-display mt-3 text-3xl font-bold">{b.text('formTitle')}</h2>
+            <p className="mt-4 text-white/70">{b.text('formText')}</p>
           </div>
           <LeadForm source="cotizacion" segment={s.slug} topic={`Cotización ${s.name}`} dark />
         </div>

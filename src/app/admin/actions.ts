@@ -8,6 +8,7 @@ import { CalcParams } from '@/lib/engine/params';
 import { LEAD_STAGES, ORDER_STATUSES, PAID_STATES, type AppRole } from '@/lib/data/types';
 import { checkUpload, parseProductForm, UPLOAD_LIMITS, type SniffedType } from '@/lib/services/catalog';
 import { parseProjectForm, PROJECT_MEDIA_LIMITS } from '@/lib/services/projects';
+import { findBlock, parseBlockForm } from '@/content/blocks';
 
 export async function loginAction(_: unknown, fd: FormData) {
   const err = await signIn(String(fd.get('email') ?? ''), String(fd.get('password') ?? ''), (fd.get('role') as AppRole) || 'superadmin');
@@ -210,4 +211,47 @@ export async function deleteProjectAction(id: string, _: unknown, _fd: FormData)
   try { await store.deleteProject(id); } catch (e) { return { error: (e as Error).message }; }
   revalidateProjects(prev.slug);
   redirect(`/admin/proyectos?eliminado=${encodeURIComponent(prev.title)}`);
+}
+
+// ---------------------------------------------------------------- Contenido del sitio
+function revalidateBlock(path: string) { revalidatePath(path); revalidatePath('/'); revalidatePath('/admin/contenido'); }
+
+export async function saveContentBlockAction(page: string, slot: string, _: unknown, fd: FormData): Promise<{ error?: string }> {
+  await requireStaff('content');
+  const def = findBlock(page, slot);
+  if (!def) return { error: 'Bloque no encontrado.' };
+  const parsed = parseBlockForm(def, fd);
+  if ('error' in parsed) return { error: parsed.error };
+  const data = parsed.data;
+  const store = getStore();
+  const current = (await store.listContentBlocks()).find((b) => b.page === page && b.slot === slot);
+  const currentData = (current?.data ?? {}) as Record<string, unknown>;
+
+  for (const f of def.fields) {
+    if (f.type !== 'image') continue;
+    // Solo se conserva la imagen que ya tenía este bloque: no se puede enlazar un archivo ajeno desde el formulario.
+    if (data[f.key] && data[f.key] !== currentData[f.key]) return { error: 'La imagen cambió mientras editabas. Recarga la página.' };
+    const file = files(fd.getAll(`${f.key}__file`))[0];
+    if (!file) continue;
+    const checked = await checkedImages([file]);
+    if (typeof checked === 'string') return { error: checked };
+    try {
+      const m = await store.uploadMedia({ bytes: checked[0].bytes, mime: checked[0].t.mime, ext: checked[0].t.ext, kind: 'image', folder: 'content', alt: null });
+      data[f.key] = m.id;
+    } catch (e) { return { error: (e as Error).message }; }
+  }
+  try {
+    await store.saveContentBlock({ page, slot, data, is_placeholder: fd.get('is_placeholder') === 'on', published: fd.get('published') === 'on' });
+  } catch (e) { return { error: (e as Error).message }; }
+  revalidateBlock(def.path);
+  redirect(`/admin/contenido/${page}/${slot}?guardado=1`);
+}
+
+export async function resetContentBlockAction(page: string, slot: string, _: unknown, _fd: FormData): Promise<{ error?: string }> {
+  await requireStaff('content');
+  const def = findBlock(page, slot);
+  if (!def) return { error: 'Bloque no encontrado.' };
+  try { await getStore().deleteContentBlock(page, slot); } catch (e) { return { error: (e as Error).message }; }
+  revalidateBlock(def.path);
+  redirect(`/admin/contenido/${page}/${slot}?restaurado=1`);
 }

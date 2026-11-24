@@ -32,7 +32,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
     <section className="pb-24 pt-32">
       <div className="container-site">
         <nav className="text-sm text-muted"><Link href="/proyectos" className="hover:underline">Proyectos</Link> / {p.title}</nav>
-        <h1 className="font-display mt-4 break-words text-4xl font-extrabold hyphens-auto sm:text-5xl">{p.title}</h1>
+        <h1 className="font-display mt-4 break-words text-4xl font-extrabold max-sm:hyphens-auto sm:text-5xl">{p.title}</h1>
         <div className="mt-10 grid gap-10 lg:grid-cols-[1.4fr_1fr]">
           <div>
             {p.cover ? <img src={p.cover} alt={`Instalación fotovoltaica: ${p.title}`} className="aspect-[16/9] w-full rounded-3xl bg-brand-dark object-cover" /> : <div className="aspect-[16/9] rounded-3xl bg-brand-dark" />}

@@ -6,7 +6,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { CalcParams, DEFAULT_PARAMS } from '../engine/params';
 import { DEFAULT_TARIFFS } from '../engine/default-tariffs';
 import type { Tariff } from '../engine/tariff';
-import type { Activity, Brand, Consent, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, Stat, Study, TierPrice } from './types';
+import type { Activity, Brand, Consent, ContentBlockRow, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, Stat, Study, TierPrice } from './types';
 import { PAID_STATES } from './types';
 import { SEED_BRANDS, SEED_PRODUCTS, SEED_PROJECTS, SEED_STATS } from './seed';
 import { effectivePrice } from '../services/catalog';
@@ -62,6 +62,15 @@ export interface Store {
   saveProject(p: ProjectInput): Promise<string>;
   deleteProject(id: string): Promise<void>;
   listBrands(opts?: { includeUnpublished?: boolean }): Promise<Brand[]>;
+  // ---- Bloques de contenido
+  listContentBlocks(): Promise<ContentBlockRow[]>;
+  /** Solo publicados, para las páginas públicas. */
+  getPublishedBlocks(page: string): Promise<ContentBlockRow[]>;
+  saveContentBlock(b: Omit<ContentBlockRow, 'updated_at'>): Promise<void>;
+  /** Borra el bloque: la página vuelve al texto base. */
+  deleteContentBlock(page: string, slot: string): Promise<void>;
+  /** URL pública y datos de archivos de `media` por id (los que no existen se omiten). */
+  resolveMedia(ids: string[]): Promise<Record<string, MediaRef>>;
   getSetting<T>(key: string, fallback: T): Promise<T>;
   queueMessage(m: { channel: 'email' | 'whatsapp'; to: string; template: string; payload: unknown; status: string; error?: string }): Promise<void>;
   track(name: string, props?: Record<string, unknown>): Promise<void>;
@@ -79,6 +88,7 @@ type DevDb = {
   projects: DevProject[]; brands: Brand[]; messages: unknown[]; events: { name: string; at: string; props?: unknown }[];
   seq: { study: number; order: number }; rl: Record<string, { c: number; t: number }>;
   media: { id: string; bucket: string; path: string; kind: 'image' | 'document'; alt: string | null; created_at: string }[];
+  content_blocks: ContentBlockRow[];
 };
 /** Proyecto en el archivo local: medios por id; las banderas faltan en archivos anteriores y valen false. */
 type DevProject = Omit<ProjectRecord, 'cover' | 'gallery' | 'client_name_authorized' | 'financials_authorized' | 'testimonial_verified' | 'updated_at'>
@@ -134,10 +144,10 @@ async function devLoad(): Promise<DevDb> {
   try { raw = readFileSync(DEV_FILE, 'utf8'); }
   catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
   // Solo se crea una base nueva si el archivo no existe: un JSON dañado se reporta, nunca se sobrescribe con la semilla.
-  if (raw != null) { devCache = JSON.parse(raw) as DevDb; devCache.media ??= []; }
+  if (raw != null) { devCache = JSON.parse(raw) as DevDb; devCache.media ??= []; devCache.content_blocks ??= []; }
   else {
     devCache = { params: [{ ...DEFAULT_PARAMS, version: 1 }], tariffs: DEFAULT_TARIFFS.map((t) => ({ ...t, id: randomUUID() })), studies: [], leads: [], activities: [], consents: [],
-      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [] };
+      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [] };
     await devSave();
   }
   return devCache!;
@@ -263,6 +273,15 @@ const devStore: Store = {
   }),
   deleteProject: (id) => tx((db) => { db.projects = db.projects.filter((p) => p.id !== id); }),
   listBrands: (o) => tx((db) => db.brands.filter((b) => o?.includeUnpublished || b.published)),
+  listContentBlocks: () => tx((db) => db.content_blocks.map((b) => ({ ...b }))),
+  getPublishedBlocks: (page) => tx((db) => db.content_blocks.filter((b) => b.page === page && b.published).map((b) => ({ ...b }))),
+  saveContentBlock: (b) => tx((db) => {
+    const row = { ...b, updated_at: new Date().toISOString() };
+    const i = db.content_blocks.findIndex((x) => x.page === b.page && x.slot === b.slot);
+    if (i >= 0) db.content_blocks[i] = row; else db.content_blocks.push(row);
+  }),
+  deleteContentBlock: (page, slot) => tx((db) => { db.content_blocks = db.content_blocks.filter((x) => !(x.page === page && x.slot === slot)); }),
+  resolveMedia: (ids) => tx((db) => Object.fromEntries(ids.map((id) => [id, devMediaRef(db, id)] as const).filter((e): e is [string, MediaRef] => !!e[1]))),
   getSetting: async (_k, fallback) => fallback,
   queueMessage: (m) => tx((db) => { db.messages.push({ ...m, at: new Date().toISOString() }); }),
   track: (name, props) => tx((db) => { db.events.push({ name, props, at: new Date().toISOString() }); if (db.events.length > 5000) db.events.splice(0, 1000); }),
@@ -504,6 +523,18 @@ const supabaseStore: Store = {
     return pid;
   },
   async deleteProject(id) { const r = await sb().from('projects').delete().eq('id', id); if (r.error) throw projectDbError(r.error); },
+  async listContentBlocks() {
+    return must(await sb().from('content_blocks').select('page, slot, data, is_placeholder, published, updated_at').order('page').order('slot')) as ContentBlockRow[];
+  },
+  async getPublishedBlocks(page) {
+    return must(await sb().from('content_blocks').select('page, slot, data, is_placeholder, published, updated_at').eq('page', page).eq('published', true)) as ContentBlockRow[];
+  },
+  async saveContentBlock(b) {
+    // content_blocks no tiene trigger de updated_at: se envía explícito.
+    must(await sb().from('content_blocks').upsert({ page: b.page, slot: b.slot, data: b.data, is_placeholder: b.is_placeholder, published: b.published, updated_at: new Date().toISOString() }, { onConflict: 'page,slot' }));
+  },
+  async deleteContentBlock(page, slot) { must(await sb().from('content_blocks').delete().eq('page', page).eq('slot', slot)); },
+  async resolveMedia(ids) { return Object.fromEntries((await mediaMap(ids)).entries()); },
   async listBrands(o) {
     let q = sb().from('brands').select('*').order('sort');
     if (!o?.includeUnpublished) q = q.eq('published', true);
