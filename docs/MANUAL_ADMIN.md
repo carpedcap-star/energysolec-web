@@ -102,9 +102,19 @@ Campos clave: `pricing.pvTiers` (USD/kWp sin IVA por tramo), `pricing.batteryUsd
 - Título y descripción para buscadores son opcionales (60 y 160 caracteres); la vista previa muestra cómo se verá en Google.
 - Cifras, normas y tarifas siempre con su fuente (regla «Nada inventado»).
 
-## Usuarios
+## Usuarios y roles
 
-Hasta que se entreguen las pantallas de la fase 2, se gestionan desde **Supabase Studio → Table Editor** (tabla `profiles`) y **Storage → public-media** para imágenes y fichas técnicas. Reglas que la base de datos hace cumplir:
+**/admin/usuarios**: el *superadministrador* invita y edita usuarios; *gerencia* ve la lista y la matriz de permisos.
+
+- **Invitar**: nombre, correo, rol y si es asesor comercial (recibe leads por turno). La persona recibe un enlace de un solo uso (vence en 24 horas) para activar su cuenta y elegir su contraseña. Nadie más la conoce. Si el correo no puede enviarse, el panel muestra el enlace para compartirlo solo con esa persona.
+- **Contraseñas**: mínimo 10 caracteres, con letras y al menos un número. «Enviar enlace» en la ficha del usuario sirve para reenviar la invitación o restablecer una contraseña olvidada.
+- **Desactivar**: el acceso se corta de inmediato y el historial se conserva (no se eliminan usuarios). Si era asesor con leads abiertos, puedes reasignarlos a otro asesor en el mismo paso.
+- **Protecciones**: nadie puede cambiar su propio rol ni desactivarse, y siempre debe quedar al menos un superadministrador activo.
+- Los **roles** son fijos porque la base de datos aplica los mismos permisos; la tabla «Qué puede hacer cada rol» los resume.
+
+## Otros datos
+
+Hasta que se entreguen las pantallas de la fase 2, se gestionan desde **Supabase Studio → Table Editor** (tabla `site_settings`: identidad gráfica e integraciones) y **Storage → public-media** para imágenes y fichas técnicas. Reglas que la base de datos hace cumplir:
 
 - Un producto con `is_placeholder = true` no puede publicarse.
 - Un proyecto muestra el cliente solo con `client_name_authorized`, la ubicación en el mapa solo con `location_authorized`, el ahorro solo con `financials_authorized` y el testimonio solo con `testimonial_verified` (vista `projects_public`; la clave pública no puede leer esas columnas de la tabla).

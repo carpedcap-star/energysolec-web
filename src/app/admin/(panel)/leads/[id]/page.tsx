@@ -5,12 +5,13 @@ import { LEAD_STAGES } from '@/lib/data/types';
 import { updateLeadAction } from '../../../actions';
 import { fmtKwp, fmtUsd } from '@/lib/format';
 import { waLink } from '@/lib/site';
+import { staffNames } from '@/lib/staff-names';
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const staff = await requireStaff('leads');
   const { id } = await params;
   const store = getStore();
-  const [l, acts] = await Promise.all([store.getLead(id), store.listActivities(id)]);
+  const [l, acts, nameOf] = await Promise.all([store.getLead(id), store.listActivities(id), staffNames()]);
   if (!l || (staff.role === 'ventas' && l.advisor_id && l.advisor_id !== staff.id)) notFound();
   const editable = can(staff, 'leads_edit');
   const info: [string, string | null | undefined][] = [
@@ -18,7 +19,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     ['Consumo mensual', l.monthly_kwh ? `${l.monthly_kwh} kWh` : null], ['Factura mensual', l.monthly_bill_usd ? fmtUsd(l.monthly_bill_usd) : null],
     ['Potencia recomendada', l.recommended_kwp ? fmtKwp(l.recommended_kwp) : null], ['Inversión estimada', l.estimated_investment_usd ? fmtUsd(l.estimated_investment_usd) : null],
     ['Fuente', l.source], ['Campaña', Object.entries(l.utm ?? {}).filter(([k]) => !k.startsWith('_')).map(([k, v]) => `${k}=${v}`).join(' · ') || null],
-    ['Registro', new Date(l.created_at).toLocaleString('es-EC')], ['Asesor', l.advisor_id ?? 'Sin asignar'], ['Observaciones', l.notes],
+    ['Registro', new Date(l.created_at).toLocaleString('es-EC')], ['Asesor', nameOf(l.advisor_id)], ['Observaciones', l.notes],
   ];
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
@@ -30,7 +31,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         </div>
         <dl className="card mt-6 divide-y divide-line text-sm">{info.filter(([, v]) => v).map(([k, v]) => <div key={k} className="flex gap-4 px-5 py-3"><dt className="w-44 shrink-0 text-muted">{k}</dt><dd className="whitespace-pre-line">{v}</dd></div>)}</dl>
         <h2 className="mt-8 font-semibold">Historial de seguimiento</h2>
-        <ol className="mt-3 space-y-3">{acts.map((a) => <li key={a.id} className="card p-4 text-sm"><p className="text-xs text-muted">{new Date(a.at).toLocaleString('es-EC')} · {a.kind}{a.actor ? ` · ${a.actor}` : ''}</p><p className="mt-1 whitespace-pre-line">{a.body}</p></li>)}</ol>
+        <ol className="mt-3 space-y-3">{acts.map((a) => <li key={a.id} className="card p-4 text-sm"><p className="text-xs text-muted">{new Date(a.at).toLocaleString('es-EC')} · {a.kind}{a.actor ? ` · ${nameOf(a.actor)}` : ''}</p><p className="mt-1 whitespace-pre-line">{a.body}</p></li>)}</ol>
       </div>
       {editable && (
         <form action={updateLeadAction.bind(null, l.id)} className="card space-y-4 self-start p-5">

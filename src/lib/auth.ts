@@ -1,10 +1,13 @@
 import 'server-only';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import { promisify } from 'node:util';
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import type { AppRole, Staff } from './data/types';
+import { devUserAuth } from './data/store';
+import { passwordProblem } from './services/users';
 
 /** Matriz de permisos por sección del panel (espejo de la RLS en 0002_rls.sql). */
 export const PERMS = {
@@ -24,6 +27,8 @@ export const PERMS = {
   brand_docs: ['superadmin', 'gerencia', 'marketing', 'compras'],   // RLS: lectura del bucket private-docs (0004)
   services: ['superadmin', 'marketing'],   // RLS: services
   blog: ['superadmin', 'marketing'],   // RLS: blog_posts, media
+  users_read: ['superadmin', 'gerencia'],   // RLS: profiles self_read
+  users: ['superadmin'],   // RLS: profiles admin_write
 } satisfies Record<string, AppRole[]>;
 export type Perm = keyof typeof PERMS;
 export const can = (s: Staff | null, p: Perm) => !!s && (PERMS[p] as AppRole[]).includes(s.role);
@@ -57,8 +62,34 @@ export async function getStaff(): Promise<Staff | null> {
   const [payload, sig] = c.split('.');
   const a = Buffer.from(devSig(payload)), b = Buffer.from(sig ?? '');
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-  const role = Buffer.from(payload, 'base64url').toString() as AppRole;
+  const decoded = Buffer.from(payload, 'base64url').toString();
+  // Usuario creado en el panel: se relee en cada petición, así desactivarlo o cambiar su rol rige de inmediato.
+  if (decoded.startsWith('u:')) {
+    const u = await devUserAuth.findById(decoded.slice(2));
+    return u && u.active && u.password_hash ? { id: u.id, email: u.email, full_name: u.full_name, role: u.role } : null;
+  }
+  const role = decoded as AppRole;
+  if (!DEV_ROLES.includes(role)) return null;
   return { id: `dev-${role}`, email: `${role}@dev.local`, full_name: `Dev (${role})`, role };
+}
+const DEV_ROLES: AppRole[] = ['superadmin', 'gerencia', 'marketing', 'ventas', 'ingenieria', 'compras'];
+async function setDevSession(payloadText: string) {
+  const payload = Buffer.from(payloadText).toString('base64url');
+  (await cookies()).set(DEV_COOKIE, `${payload}.${devSig(payload)}`, { httpOnly: true, sameSite: 'lax', secure: false, path: '/', maxAge: 60 * 60 * 8 });
+}
+
+// ---- Contraseñas de usuarios de desarrollo (scrypt). En Supabase las gestiona Auth.
+const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
+async function hashPassword(pw: string) {
+  const salt = randomBytes(16);
+  const hash = await scrypt(pw, salt, 64);
+  return ['scrypt', salt.toString('base64'), hash.toString('base64')].join(':');
+}
+async function verifyPassword(pw: string, stored: string) {
+  const [alg, salt, hash] = stored.split(':');
+  if (alg !== 'scrypt' || !salt || !hash) return false;
+  const a = await scrypt(pw, Buffer.from(salt, 'base64'), 64), b = Buffer.from(hash, 'base64');
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 export async function requireStaff(perm: Perm = 'dashboard'): Promise<Staff> {
@@ -77,10 +108,47 @@ export async function signIn(email: string, password: string, devRole: AppRole =
     return null;
   }
   if (!devAuthEnabled()) return 'El panel requiere Supabase configurado.';
+  if (email.trim()) {
+    // Usuario creado en el panel (correo y contraseña propios).
+    const u = await devUserAuth.findByEmail(email);
+    if (!u?.password_hash || !(await verifyPassword(password, u.password_hash))) return 'Credenciales no válidas';
+    if (!u.active) return 'Tu usuario no tiene un perfil activo en el panel.';
+    await setDevSession(`u:${u.id}`);
+    return null;
+  }
   const a = Buffer.from(password), b = Buffer.from(process.env.DEV_ADMIN_PASSWORD!);
   if (a.length !== b.length || !timingSafeEqual(a, b)) return 'Credenciales no válidas';
-  const payload = Buffer.from(devRole).toString('base64url');
-  (await cookies()).set(DEV_COOKIE, `${payload}.${devSig(payload)}`, { httpOnly: true, sameSite: 'lax', secure: false, path: '/', maxAge: 60 * 60 * 8 });
+  if (!DEV_ROLES.includes(devRole)) return 'Rol no válido';
+  await setDevSession(devRole);
+  return null;
+}
+
+const LINK_EXPIRED = 'El enlace expiró o ya se usó. Pide uno nuevo a un administrador.';
+/**
+ * Activa la cuenta o restablece la contraseña con el enlace enviado por correo.
+ * La contraseña se valida ANTES de consumir el token (un solo uso), para no gastarlo con un error.
+ */
+export async function activateAccount(token: string, type: 'invite' | 'recovery', password: string): Promise<string | null> {
+  const problem = passwordProblem(password);
+  if (problem) return problem;
+  if (!token || token.length > 512) return LINK_EXPIRED;
+  if (supabaseConfigured()) {
+    const sb = await supabaseAuthClient();
+    const { data, error } = await sb.auth.verifyOtp({ token_hash: token, type });
+    if (error || !data.user) return LINK_EXPIRED;
+    const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
+    const { data: p } = await admin.from('profiles').select('active').eq('id', data.user.id).maybeSingle();
+    if (!p?.active) { await sb.auth.signOut(); return 'Tu usuario no tiene un perfil activo en el panel.'; }
+    const up = await sb.auth.updateUser({ password });
+    if (up.error) return `No se pudo guardar la contraseña: ${up.error.message}`;
+    return null;
+  }
+  if (!devAuthEnabled()) return 'El panel requiere Supabase configurado.';
+  const u = await devUserAuth.consumeToken(token);
+  if (!u) return LINK_EXPIRED;
+  if (!u.active) return 'Tu usuario no tiene un perfil activo en el panel.';
+  await devUserAuth.setPasswordHash(u.id, await hashPassword(password));
+  await setDevSession(`u:${u.id}`);
   return null;
 }
 

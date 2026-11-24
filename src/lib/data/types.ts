@@ -147,3 +147,10 @@ export type BlogPostRecord = Omit<BlogPost, 'cover' | 'published_at' | 'excerpt'
   id: string; excerpt: string | null; cover: MediaRef | null; published: boolean; published_at: string | null; author_id: string | null;
 };
 export type BlogPostInput = Omit<BlogPostRecord, 'id' | 'cover' | 'author' | 'author_id'> & { id?: string; cover_id: string | null };
+
+/** Usuario del panel (tabla `profiles`). `activated`: ya definió su contraseña con el enlace de invitación. */
+export type StaffUser = {
+  id: string; full_name: string; email: string; phone: string | null; role: AppRole;
+  is_advisor: boolean; active: boolean; activated: boolean; created_at: string;
+};
+export type StaffUserInput = Pick<StaffUser, 'full_name' | 'email' | 'phone' | 'role' | 'is_advisor' | 'active'>;

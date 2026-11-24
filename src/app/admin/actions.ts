@@ -2,7 +2,12 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { requireStaff, signIn, signOut, can } from '@/lib/auth';
+import { requireStaff, signIn, signOut, can, activateAccount } from '@/lib/auth';
+import { headers } from 'next/headers';
+import { SITE } from '@/lib/site';
+import { guard } from '@/lib/request';
+import { esc, sendEmail } from '@/lib/services/messaging';
+import { parseUserForm, roleChangeProblem } from '@/lib/services/users';
 import { getStore } from '@/lib/data/store';
 import { CalcParams } from '@/lib/engine/params';
 import { LEAD_STAGES, ORDER_STATUSES, PAID_STATES, type AppRole } from '@/lib/data/types';
@@ -436,4 +441,88 @@ export async function uploadPostImageAction(fd: FormData): Promise<{ url?: strin
     const m = await getStore().uploadMedia({ bytes: c[0].bytes, mime: c[0].t.mime, ext: c[0].t.ext, kind: 'image', folder: 'blog', alt });
     return { url: m.url };
   } catch (e) { return { error: (e as Error).message }; }
+}
+
+// ---------------------------------------------------------------- Usuarios
+type LinkResult = { error?: string; ok?: boolean; id?: string; emailSent?: boolean; link?: string };
+
+/** Enlace de activación. En producción, siempre la URL oficial (nunca el Host de la petición, que se puede falsificar). */
+async function accessUrl(token: string, type: 'invite' | 'recovery') {
+  let base = SITE.url;
+  if (process.env.NODE_ENV !== 'production') {
+    const h = await headers();
+    base = `${h.get('x-forwarded-proto') ?? 'http'}://${h.get('host') ?? 'localhost:3000'}`;
+  }
+  return `${base}/admin/activar?token_hash=${encodeURIComponent(token)}&type=${type}`;
+}
+async function sendAccessEmail(to: string, name: string, link: string, type: 'invite' | 'recovery') {
+  const invite = type === 'invite';
+  const r = await sendEmail({
+    to, template: invite ? 'invitacion_panel' : 'acceso_panel',
+    subject: invite ? 'Tu acceso al panel de Energy Solutions Ecuador' : 'Restablece tu contraseña del panel — Energy Solutions Ecuador',
+    html: `<div style="font-family:Arial,sans-serif"><p>Hola ${esc(name)},</p><p>${invite ? 'Se creó tu usuario en el panel de Energy Solutions Ecuador.' : 'Recibimos una solicitud para restablecer tu contraseña del panel.'} Usa este enlace personal para ${invite ? 'activar tu cuenta y elegir' : 'elegir'} tu contraseña:</p><p><a href="${esc(link)}">${invite ? 'Activar mi cuenta' : 'Elegir nueva contraseña'}</a></p><p style="color:#666">El enlace es de un solo uso y vence en 24 horas. Si no esperabas este correo, ignóralo.</p></div>`,
+  });
+  return r.sent;
+}
+
+export async function createUserAction(_: unknown, fd: FormData): Promise<LinkResult> {
+  await requireStaff('users');
+  const parsed = parseUserForm(fd);
+  if ('error' in parsed) return { error: parsed.error };
+  const { active: _a, ...input } = parsed.data;
+  let created: Awaited<ReturnType<ReturnType<typeof getStore>['createUser']>>;
+  try { created = await getStore().createUser(input); } catch (e) { return { error: (e as Error).message }; }
+  const link = await accessUrl(created.token_hash, created.type);
+  const emailSent = await sendAccessEmail(input.email, input.full_name, link, created.type);
+  revalidatePath('/admin/usuarios');
+  // El enlace solo se muestra si el correo no salió (p. ej. sin proveedor configurado).
+  return { ok: true, id: created.id, emailSent, link: emailSent ? undefined : link };
+}
+
+export async function updateUserAction(id: string, _: unknown, fd: FormData): Promise<{ error?: string }> {
+  const staff = await requireStaff('users');
+  const parsed = parseUserForm(fd);
+  if ('error' in parsed) return { error: parsed.error };
+  const store = getStore();
+  const all = await store.listUsers();
+  const target = all.find((u) => u.id === id);
+  if (!target) return { error: 'Usuario no encontrado.' };
+  const { email: _e, ...patch } = parsed.data;
+  const problem = roleChangeProblem(target, patch, staff.id, all);
+  if (problem) return { error: problem };
+  const reassignTo = String(fd.get('reassign_to') ?? '');
+  if (reassignTo) {
+    const to = all.find((u) => u.id === reassignTo);
+    if (!to || !to.active || !to.is_advisor || to.id === id) return { error: 'Elige un asesor activo para reasignar los leads.' };
+  }
+  try {
+    await store.updateUser(id, patch);
+    if (reassignTo && (!patch.active || !patch.is_advisor)) await store.reassignOpenLeads(id, reassignTo, staff.id);
+  } catch (e) { return { error: (e as Error).message }; }
+  revalidatePath('/admin/usuarios'); revalidatePath('/admin/leads');
+  redirect(`/admin/usuarios/${id}?guardado=1`);
+}
+
+export async function sendAccessLinkAction(id: string, _: unknown, _fd: FormData): Promise<LinkResult> {
+  await requireStaff('users');
+  const store = getStore();
+  const u = (await store.listUsers()).find((x) => x.id === id);
+  if (!u) return { error: 'Usuario no encontrado.' };
+  if (!u.active) return { error: 'El usuario está desactivado. Actívalo antes de enviarle un enlace.' };
+  let t: { token_hash: string; type: 'invite' | 'recovery' };
+  try { t = await store.createAccessToken(id); } catch (e) { return { error: (e as Error).message }; }
+  const link = await accessUrl(t.token_hash, t.type);
+  const emailSent = await sendAccessEmail(u.email, u.full_name, link, u.activated ? 'recovery' : 'invite');
+  return { ok: true, emailSent, link: emailSent ? undefined : link };
+}
+
+export async function activateAction(_: unknown, fd: FormData): Promise<{ error?: string }> {
+  // Ruta pública: límite por IP contra intentos repetidos con tokens.
+  if (!(await guard('activate', 10, 900))) return { error: 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.' };
+  const password = String(fd.get('password') ?? ''), confirm = String(fd.get('confirm') ?? '');
+  if (password !== confirm) return { error: 'Las contraseñas no coinciden.' };
+  const type = fd.get('type') === 'recovery' ? 'recovery' : 'invite';
+  const err = await activateAccount(String(fd.get('token_hash') ?? ''), type, password);
+  if (err) return { error: err };
+  redirect('/admin');
 }

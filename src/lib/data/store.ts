@@ -1,12 +1,12 @@
 import 'server-only';
 import { promises as fs, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { CalcParams, DEFAULT_PARAMS } from '../engine/params';
 import { DEFAULT_TARIFFS } from '../engine/default-tariffs';
 import type { Tariff } from '../engine/tariff';
-import type { Activity, BlogPost, BlogPostInput, BlogPostRecord, Brand, BrandAssetKind, BrandInput, BrandRecord, Consent, ContentBlockRow, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, ServiceInput, ServiceRow, Stat, Study, TierPrice, MediaBucket } from './types';
+import type { Activity, BlogPost, BlogPostInput, BlogPostRecord, Brand, BrandAssetKind, BrandInput, BrandRecord, Consent, ContentBlockRow, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, ServiceInput, ServiceRow, StaffUser, StaffUserInput, Stat, Study, TierPrice, MediaBucket } from './types';
 import { PAID_STATES } from './types';
 import { SEED_BRANDS, SEED_PRODUCTS, SEED_PROJECTS, SEED_STATS } from './seed';
 import { effectivePrice } from '../services/catalog';
@@ -19,6 +19,9 @@ import { isLive, toPublicPost } from '../services/blog';
  *  - Supabase (producción): service role SOLO en el servidor; la RLS protege accesos desde el navegador.
  *  - Archivo local .data/dev-db.json (desarrollo sin credenciales). Nunca se usa en producción.
  */
+export type AccessLinkType = 'invite' | 'recovery';
+const CLOSED_STAGES: LeadStage[] = ['ganado', 'perdido'];
+
 export interface Store {
   kind: 'supabase' | 'dev';
   getActiveParams(): Promise<CalcParams>;
@@ -81,6 +84,17 @@ export interface Store {
   /** El autor se fija al crear; al editar se conserva. */
   savePost(p: BlogPostInput, author: { id: string; name: string }): Promise<string>;
   deletePost(id: string): Promise<void>;
+  // ---- Usuarios del panel
+  listUsers(): Promise<StaffUser[]>;
+  /** Crea el usuario sin contraseña y devuelve el token del enlace de activación (invitación). */
+  createUser(u: Omit<StaffUserInput, 'active'>): Promise<{ id: string; token_hash: string; type: AccessLinkType }>;
+  /** El correo no cambia después de crear el usuario. */
+  updateUser(id: string, patch: Omit<StaffUserInput, 'email'>): Promise<void>;
+  /** Nuevo enlace de acceso (activar o restablecer la contraseña). */
+  createAccessToken(id: string): Promise<{ token_hash: string; type: AccessLinkType }>;
+  /** Leads abiertos (no ganados ni perdidos) por asesor. */
+  openLeadsByAdvisor(): Promise<Record<string, number>>;
+  reassignOpenLeads(from: string, to: string, actor: string): Promise<number>;
   // ---- Servicios (filas de la tabla; el catálogo base se combina en services/service-catalog.ts)
   listServiceRows(): Promise<ServiceRow[]>;
   saveService(s: ServiceInput): Promise<string>;
@@ -114,7 +128,10 @@ type DevDb = {
   content_blocks: ContentBlockRow[];
   services: DevService[];
   posts: DevPost[];
+  users: DevUser[];
 };
+/** Usuario de desarrollo: contraseña con scrypt y token de acceso guardado solo como hash SHA-256. */
+type DevUser = Omit<StaffUser, 'activated'> & { password_hash?: string; token_hash?: string; token_expires?: number };
 type DevPost = Omit<BlogPostRecord, 'cover'> & { cover_id: string | null };
 type DevAsset = { id: string; kind: BrandAssetKind; title: string; media_id: string | null; url: string | null };
 /** Marca en el archivo local: medios por id; archivos anteriores no traen los campos nuevos. */
@@ -164,6 +181,31 @@ const devPostRecord = (db: DevDb, p: DevPost): BlogPostRecord => {
   return { ...rest, cover: cover_id ? devMediaRef(db, cover_id) : null };
 };
 const byDateDesc = (a: { published_at: string | null }, b: { published_at: string | null }) => (b.published_at ?? '').localeCompare(a.published_at ?? '');
+const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
+const devUserOut = (u: DevUser): StaffUser => {
+  const { password_hash, token_hash: _t, token_expires: _e, ...rest } = u;
+  return { ...rest, activated: !!password_hash };
+};
+/** Emite un token de acceso de desarrollo (24 h). Solo su hash queda guardado. */
+function devIssueToken(u: DevUser) {
+  const token = randomBytes(32).toString('base64url');
+  u.token_hash = sha256(token); u.token_expires = Date.now() + 24 * 3600e3;
+  return token;
+}
+/** Autenticación de usuarios en modo desarrollo (sin Supabase). La usa solo src/lib/auth.ts. */
+export const devUserAuth = {
+  findById: (id: string) => tx((db) => db.users.find((u) => u.id === id) ?? null),
+  findByEmail: (email: string) => tx((db) => db.users.find((u) => u.email === email.trim().toLowerCase()) ?? null),
+  /** Consume el token (un solo uso). Devuelve el usuario o null si no existe o venció. */
+  consumeToken: (token: string) => tx((db) => {
+    const h = sha256(token);
+    const u = db.users.find((x) => x.token_hash === h);
+    if (!u || !u.token_expires || u.token_expires < Date.now()) return null;
+    delete u.token_hash; delete u.token_expires;
+    return { ...u };
+  }),
+  setPasswordHash: (id: string, hash: string) => tx((db) => { const u = db.users.find((x) => x.id === id); if (u) u.password_hash = hash; }),
+};
 const devServiceRow = (db: DevDb, s: DevService): ServiceRow => {
   const { cover_id, ...rest } = s;
   return { ...rest, cover: cover_id ? devMediaRef(db, cover_id) : null };
@@ -187,11 +229,16 @@ function devRecord(db: DevDb, p: DevProduct): ProductRecord {
   };
 }
 const DEV_FILE = path.join(process.cwd(), '.data', 'dev-db.json');
-let devCache: DevDb | null = null;
-let devLock: Promise<unknown> = Promise.resolve();
+/**
+ * Estado del almacén de desarrollo COMPARTIDO por todo el proceso. En `next dev` cada ruta se compila por separado y
+ * este módulo se instancia varias veces; con variables de módulo, cada instancia tenía su propia copia de la base y al
+ * guardar sobrescribía los cambios de las demás (escrituras perdidas). globalThis es único por proceso.
+ */
+const devState: { cache: DevDb | null; lock: Promise<unknown> } =
+  ((globalThis as { __eseDevStore?: { cache: DevDb | null; lock: Promise<unknown> } }).__eseDevStore ??= { cache: null, lock: Promise.resolve() });
 
 async function devLoad(): Promise<DevDb> {
-  if (devCache) return devCache;
+  if (devState.cache) return devState.cache;
   let raw: string | null = null;
   // Lectura SÍNCRONA a propósito: en `next dev`, React 19 registra el valor de cada E/S asíncrona que espera un
   // componente de servidor y lo envía al navegador para DevTools. Con fs.readFile, el archivo completo (incluidos
@@ -199,24 +246,28 @@ async function devLoad(): Promise<DevDb> {
   try { raw = readFileSync(DEV_FILE, 'utf8'); }
   catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
   // Solo se crea una base nueva si el archivo no existe: un JSON dañado se reporta, nunca se sobrescribe con la semilla.
-  if (raw != null) { devCache = JSON.parse(raw) as DevDb; devCache.media ??= []; devCache.content_blocks ??= []; devCache.services ??= []; devCache.posts ??= []; }
+  if (raw != null) {
+    const db = JSON.parse(raw) as DevDb;
+    db.media ??= []; db.content_blocks ??= []; db.services ??= []; db.posts ??= []; db.users ??= [];
+    devState.cache = db;
+  }
   else {
-    devCache = { params: [{ ...DEFAULT_PARAMS, version: 1 }], tariffs: DEFAULT_TARIFFS.map((t) => ({ ...t, id: randomUUID() })), studies: [], leads: [], activities: [], consents: [],
-      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [], posts: [] };
+    devState.cache = { params: [{ ...DEFAULT_PARAMS, version: 1 }], tariffs: DEFAULT_TARIFFS.map((t) => ({ ...t, id: randomUUID() })), studies: [], leads: [], activities: [], consents: [],
+      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [], posts: [], users: [] };
     await devSave();
   }
-  return devCache!;
+  return devState.cache!;
 }
 async function devSave() {
   // Escritura atómica (archivo temporal + rename): una lectura concurrente nunca ve un JSON a medio escribir.
   await fs.mkdir(path.dirname(DEV_FILE), { recursive: true });
   const tmp = `${DEV_FILE}.${process.pid}.${randomUUID()}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(devCache, null, 1));
+  await fs.writeFile(tmp, JSON.stringify(devState.cache, null, 1));
   await fs.rename(tmp, DEV_FILE);
 }
 function tx<T>(fn: (db: DevDb) => T | Promise<T>): Promise<T> {
-  const run = devLock.then(async () => { const db = await devLoad(); const r = await fn(db); await devSave(); return r; });
-  devLock = run.catch(() => undefined);
+  const run = devState.lock.then(async () => { const db = await devLoad(); const r = await fn(db); await devSave(); return r; });
+  devState.lock = run.catch(() => undefined);
   return run;
 }
 
@@ -372,6 +423,29 @@ const devStore: Store = {
     return row.id;
   }),
   deletePost: (id) => tx((db) => { db.posts = db.posts.filter((p) => p.id !== id); }),
+  listUsers: () => tx((db) => db.users.map(devUserOut).sort((a, b) => Number(b.active) - Number(a.active) || a.full_name.localeCompare(b.full_name, 'es'))),
+  createUser: (input) => tx((db) => {
+    const email = input.email.toLowerCase();
+    if (db.users.some((u) => u.email === email)) throw new Error('Ya existe un usuario con ese correo.');
+    const u: DevUser = { ...input, email, id: randomUUID(), active: true, created_at: new Date().toISOString() };
+    const token = devIssueToken(u);
+    db.users.push(u);
+    return { id: u.id, token_hash: token, type: 'invite' as const };
+  }),
+  updateUser: (id, patch) => tx((db) => { const u = db.users.find((x) => x.id === id); if (!u) throw new Error('Usuario no encontrado.'); Object.assign(u, patch); }),
+  createAccessToken: (id) => tx((db) => {
+    const u = db.users.find((x) => x.id === id);
+    if (!u) throw new Error('Usuario no encontrado.');
+    return { token_hash: devIssueToken(u), type: (u.password_hash ? 'recovery' : 'invite') as AccessLinkType };
+  }),
+  openLeadsByAdvisor: () => tx((db) => db.leads.filter((l) => l.advisor_id && !CLOSED_STAGES.includes(l.stage))
+    .reduce<Record<string, number>>((a, l) => { a[l.advisor_id!] = (a[l.advisor_id!] ?? 0) + 1; return a; }, {})),
+  reassignOpenLeads: (from, to, actor) => tx((db) => {
+    const at = new Date().toISOString();
+    const moved = db.leads.filter((l) => l.advisor_id === from && !CLOSED_STAGES.includes(l.stage));
+    for (const l of moved) { l.advisor_id = to; db.activities.push({ id: randomUUID(), lead_id: l.id, kind: 'sistema', body: 'Lead reasignado por desactivación del asesor', at, actor }); }
+    return moved.length;
+  }),
   listServiceRows: () => tx((db) => db.services.map((s) => devServiceRow(db, s))),
   saveService: (input) => tx((db) => {
     if (db.services.some((x) => x.id !== input.id && x.slug === input.slug)) throw new Error(`Ya existe otro servicio con la URL /servicios/${input.slug}.`);
@@ -737,6 +811,48 @@ const supabaseStore: Store = {
     return (r.data as { id: string }).id;
   },
   async deletePost(id) { must(await sb().from('blog_posts').delete().eq('id', id)); },
+  async listUsers() {
+    const c = sb();
+    const profiles = must(await c.from('profiles').select('id, full_name, email, phone, role, is_advisor, active, created_at')) as Omit<StaffUser, 'activated'>[];
+    const { data, error } = await c.auth.admin.listUsers({ perPage: 1000 });
+    if (error) throw new Error(error.message);
+    const confirmed = new Set(data.users.filter((u) => u.email_confirmed_at).map((u) => u.id));
+    return profiles.map((p) => ({ ...p, activated: confirmed.has(p.id) }))
+      .sort((a, b) => Number(b.active) - Number(a.active) || a.full_name.localeCompare(b.full_name, 'es'));
+  },
+  async createUser(input) {
+    const c = sb();
+    const email = input.email.toLowerCase();
+    // generateLink crea el usuario de Auth sin enviar correo: el enlace lo enviamos nosotros.
+    const { data, error } = await c.auth.admin.generateLink({ type: 'invite', email });
+    if (error || !data.user) throw new Error(/already|registered|exists/i.test(error?.message ?? '') ? 'Ya existe un usuario con ese correo.' : `No se pudo crear el usuario: ${error?.message}`);
+    const ins = await c.from('profiles').insert({ id: data.user.id, ...input, email, active: true });
+    if (ins.error) {
+      await c.auth.admin.deleteUser(data.user.id); // no dejar un usuario de Auth sin perfil
+      throw new Error(ins.error.code === '23505' ? 'Ya existe un usuario con ese correo.' : ins.error.message);
+    }
+    return { id: data.user.id, token_hash: data.properties.hashed_token, type: 'invite' as const };
+  },
+  async updateUser(id, patch) { must(await sb().from('profiles').update(patch).eq('id', id)); },
+  async createAccessToken(id) {
+    const c = sb();
+    const p = must(await c.from('profiles').select('email').eq('id', id).maybeSingle()) as { email: string } | null;
+    if (!p) throw new Error('Usuario no encontrado.');
+    // «recovery» sirve para quien nunca activó y para quien olvidó su contraseña: inicia sesión y permite fijarla.
+    const { data, error } = await c.auth.admin.generateLink({ type: 'recovery', email: p.email });
+    if (error) throw new Error(`No se pudo generar el enlace: ${error.message}`);
+    return { token_hash: data.properties.hashed_token, type: 'recovery' as const };
+  },
+  async openLeadsByAdvisor() {
+    const rows = must(await sb().from('leads').select('advisor_id').not('advisor_id', 'is', null).not('stage', 'in', `(${CLOSED_STAGES.join(',')})`)) as { advisor_id: string }[];
+    return rows.reduce<Record<string, number>>((a, r) => { a[r.advisor_id] = (a[r.advisor_id] ?? 0) + 1; return a; }, {});
+  },
+  async reassignOpenLeads(from, to, actor) {
+    const c = sb();
+    const moved = must(await c.from('leads').update({ advisor_id: to }).eq('advisor_id', from).not('stage', 'in', `(${CLOSED_STAGES.join(',')})`).select('id')) as { id: string }[];
+    if (moved.length) await c.from('lead_activities').insert(moved.map((l) => ({ lead_id: l.id, kind: 'sistema', body: 'Lead reasignado por desactivación del asesor', actor: isUuid(actor) ? actor : null })));
+    return moved.length;
+  },
   async listServiceRows() {
     const rows = must(await sb().from('services').select('*').order('sort')) as any[];
     const media = await mediaMap(rows.map((r) => r.cover).filter(Boolean));
