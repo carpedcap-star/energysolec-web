@@ -75,8 +75,23 @@ export type Project = {
   province: string | null; city: string | null; lat: number | null; lng: number | null; location_authorized: boolean;
   capacity_kwp: number | null; inverter_kw: number | null; panel_count: number | null; installation_type: string | null;
   technology: string[]; annual_generation_kwh: number | null; generation_is_measured: boolean; annual_savings_usd: number | null;
-  co2_avoided_t: number | null; executed_on: string | null; status: string; description: string | null;
-  testimonial: string | null; testimonial_author: string | null; cover: string | null; published: boolean; featured: boolean; is_placeholder: boolean;
+  co2_avoided_t: number | null; executed_on: string | null; status: ProjectStatus; description: string | null;
+  testimonial: string | null; testimonial_author: string | null; cover: string | null; gallery: string[]; published: boolean; featured: boolean; is_placeholder: boolean;
+};
+export type ProjectStatus = 'en_desarrollo' | 'en_construccion' | 'operativo' | 'finalizado';
+export const PROJECT_STATUSES: { id: ProjectStatus; label: string }[] = [
+  { id: 'en_desarrollo', label: 'En desarrollo' }, { id: 'en_construccion', label: 'En construcción' }, { id: 'operativo', label: 'Operativo' }, { id: 'finalizado', label: 'Finalizado' },
+];
+/**
+ * Vista completa de un proyecto para el panel: datos sin enmascarar, banderas de autorización y medios.
+ * Lo público (`Project`) se obtiene SIEMPRE con `toPublicProject`, que oculta lo no autorizado.
+ */
+export type ProjectRecord = Omit<Project, 'cover' | 'gallery'> & {
+  client_name_authorized: boolean; financials_authorized: boolean; testimonial_verified: boolean;
+  cover: MediaRef | null; gallery: MediaRef[]; updated_at: string | null;
+};
+export type ProjectInput = Omit<ProjectRecord, 'id' | 'cover' | 'gallery' | 'updated_at' | 'is_placeholder'> & {
+  id?: string; cover_id: string | null; gallery_ids: string[];
 };
 export type Brand = { id: string; slug: string; name: string; logo: string | null; description: string | null; relationship: string | null; relationship_verified: boolean; published: boolean };
 export type Consent = { purpose: 'privacidad_servicio' | 'comercial_marketing'; granted: boolean };

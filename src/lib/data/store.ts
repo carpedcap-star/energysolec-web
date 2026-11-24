@@ -1,15 +1,16 @@
 import 'server-only';
-import { promises as fs } from 'node:fs';
+import { promises as fs, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { CalcParams, DEFAULT_PARAMS } from '../engine/params';
 import { DEFAULT_TARIFFS } from '../engine/default-tariffs';
 import type { Tariff } from '../engine/tariff';
-import type { Activity, Brand, Consent, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, Stat, Study, TierPrice } from './types';
+import type { Activity, Brand, Consent, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, Stat, Study, TierPrice } from './types';
 import { PAID_STATES } from './types';
 import { SEED_BRANDS, SEED_PRODUCTS, SEED_PROJECTS, SEED_STATS } from './seed';
 import { effectivePrice } from '../services/catalog';
+import { toPublicProject } from '../services/projects';
 
 /**
  * Capa de acceso a datos del servidor. Dos implementaciones con la misma interfaz:
@@ -52,7 +53,14 @@ export interface Store {
   updateOrderStatus(id: string, status: OrderStatus, actor: string, payment?: { reference: string }): Promise<void>;
   listStats(): Promise<Stat[]>;
   saveStat(s: Stat): Promise<void>;
+  /** Proyectos para lo público, SIEMPRE enmascarados con toPublicProject (regla 3). */
   listProjects(opts?: { includeUnpublished?: boolean }): Promise<Project[]>;
+  // ---- Panel: proyectos (datos completos con banderas de autorización)
+  listProjectRecords(): Promise<ProjectRecord[]>;
+  getProjectRecord(id: string): Promise<ProjectRecord | null>;
+  /** Crea o actualiza (si trae id). Devuelve el id. */
+  saveProject(p: ProjectInput): Promise<string>;
+  deleteProject(id: string): Promise<void>;
   listBrands(opts?: { includeUnpublished?: boolean }): Promise<Brand[]>;
   getSetting<T>(key: string, fallback: T): Promise<T>;
   queueMessage(m: { channel: 'email' | 'whatsapp'; to: string; template: string; payload: unknown; status: string; error?: string }): Promise<void>;
@@ -68,10 +76,23 @@ const pad = (n: number) => String(n).padStart(6, '0');
 type DevDb = {
   params: CalcParams[]; tariffs: Tariff[]; studies: Study[]; leads: Lead[]; activities: Activity[];
   consents: (Consent & { email: string; at: string })[]; products: DevProduct[]; orders: Order[]; stats: Stat[];
-  projects: Project[]; brands: Brand[]; messages: unknown[]; events: { name: string; at: string; props?: unknown }[];
+  projects: DevProject[]; brands: Brand[]; messages: unknown[]; events: { name: string; at: string; props?: unknown }[];
   seq: { study: number; order: number }; rl: Record<string, { c: number; t: number }>;
   media: { id: string; bucket: string; path: string; kind: 'image' | 'document'; alt: string | null; created_at: string }[];
 };
+/** Proyecto en el archivo local: medios por id; las banderas faltan en archivos anteriores y valen false. */
+type DevProject = Omit<ProjectRecord, 'cover' | 'gallery' | 'client_name_authorized' | 'financials_authorized' | 'testimonial_verified' | 'updated_at'>
+  & Partial<Pick<ProjectRecord, 'client_name_authorized' | 'financials_authorized' | 'testimonial_verified' | 'updated_at'>>
+  & { cover?: unknown; gallery?: unknown; cover_id?: string | null; gallery_ids?: string[] };
+function devProjectRecord(db: DevDb, p: DevProject): ProjectRecord {
+  const { cover_id, gallery_ids, cover: _c, gallery: _g, ...base } = p;
+  return {
+    ...base, client_name_authorized: !!p.client_name_authorized, financials_authorized: !!p.financials_authorized,
+    testimonial_verified: !!p.testimonial_verified, updated_at: p.updated_at ?? null,
+    cover: cover_id ? devMediaRef(db, cover_id) : null,
+    gallery: (gallery_ids ?? []).map((id) => devMediaRef(db, id)).filter((m): m is MediaRef => !!m),
+  };
+}
 /** En el archivo local el producto guarda los precios por nivel y los ids de medios; `price`, `images`, etc. se derivan al leer. */
 type DevProduct = Product & { brand_id?: string | null; prices?: TierPrice[]; image_ids?: string[]; datasheet_id?: string | null; updated_at?: string | null };
 const DEV_MEDIA_DIR = path.join(process.cwd(), '.data', 'media');
@@ -107,7 +128,10 @@ let devLock: Promise<unknown> = Promise.resolve();
 async function devLoad(): Promise<DevDb> {
   if (devCache) return devCache;
   let raw: string | null = null;
-  try { raw = await fs.readFile(DEV_FILE, 'utf8'); }
+  // Lectura SÍNCRONA a propósito: en `next dev`, React 19 registra el valor de cada E/S asíncrona que espera un
+  // componente de servidor y lo envía al navegador para DevTools. Con fs.readFile, el archivo completo (incluidos
+  // datos no autorizados) acababa en el HTML de la primera página renderizada. En producción no ocurre.
+  try { raw = readFileSync(DEV_FILE, 'utf8'); }
   catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
   // Solo se crea una base nueva si el archivo no existe: un JSON dañado se reporta, nunca se sobrescribe con la semilla.
   if (raw != null) { devCache = JSON.parse(raw) as DevDb; devCache.media ??= []; }
@@ -220,7 +244,24 @@ const devStore: Store = {
   }),
   listStats: () => tx((db) => [...db.stats].sort((a, b) => a.sort - b.sort)),
   saveStat: (s) => tx((db) => { const i = db.stats.findIndex((x) => x.id === s.id); if (i >= 0) db.stats[i] = s; else db.stats.push(s); }),
-  listProjects: (o) => tx((db) => db.projects.filter((p) => o?.includeUnpublished || p.published)),
+  // Mismo orden que Supabase: ejecución más reciente primero, sin fecha al final.
+  listProjects: (o) => tx((db) => db.projects.filter((p) => o?.includeUnpublished || p.published)
+    .sort((a, b) => (b.executed_on ?? '').localeCompare(a.executed_on ?? ''))
+    .map((p) => toPublicProject(devProjectRecord(db, p)))),
+  listProjectRecords: () => tx((db) => db.projects.map((p) => devProjectRecord(db, p)).sort((a, b) => a.title.localeCompare(b.title, 'es'))),
+  getProjectRecord: (id) => tx((db) => { const p = db.projects.find((x) => x.id === id); return p ? devProjectRecord(db, p) : null; }),
+  saveProject: (input) => tx((db) => {
+    if (db.projects.some((x) => x.id !== input.id && x.slug === input.slug)) throw new Error(`Ya existe otro proyecto con la URL /proyectos/${input.slug}.`);
+    for (const id of [...input.gallery_ids, ...(input.cover_id ? [input.cover_id] : [])])
+      if (!db.media.some((m) => m.id === id)) throw new Error('Una de las fotos ya no existe. Vuelve a cargarla.');
+    const { id, ...rest } = input;
+    const prev = id ? db.projects.find((x) => x.id === id) : undefined;
+    if (id && !prev) throw new Error('Proyecto no encontrado.');
+    const row: DevProject = { ...rest, id: id ?? randomUUID(), is_placeholder: prev?.is_placeholder ?? false, updated_at: new Date().toISOString() };
+    if (prev) db.projects[db.projects.indexOf(prev)] = row; else db.projects.push(row);
+    return row.id;
+  }),
+  deleteProject: (id) => tx((db) => { db.projects = db.projects.filter((p) => p.id !== id); }),
   listBrands: (o) => tx((db) => db.brands.filter((b) => o?.includeUnpublished || b.published)),
   getSetting: async (_k, fallback) => fallback,
   queueMessage: (m) => tx((db) => { db.messages.push({ ...m, at: new Date().toISOString() }); }),
@@ -272,6 +313,39 @@ const mapRecord = (p: any, media: Map<string, MediaRef>): ProductRecord => ({
   datasheet: p.datasheet ? media.get(p.datasheet) ?? null : null,
 });
 async function mapProducts(rows: any[]) { const m = await mediaMap(mediaIdsOf(rows)); return rows.map((r) => mapProduct(r, m)); }
+const PROJECT_SELECT = '*, project_media(media_id, role, sort)';
+async function mapProjectRecords(rows: any[]): Promise<ProjectRecord[]> {
+  const media = await mediaMap(rows.flatMap((p) => ((p.project_media ?? []) as any[]).map((m) => m.media_id as string)));
+  return rows.map((p) => {
+    const { project_media, testimonial_verified, ...base } = p;
+    const pm = ((project_media ?? []) as { media_id: string; role: string; sort: number }[]).sort((a, b) => a.sort - b.sort);
+    const cover = pm.find((m) => m.role === 'cover');
+    return {
+      ...base, technology: p.technology ?? [], testimonial_verified: !!testimonial_verified, is_placeholder: false,
+      lat: p.lat == null ? null : Number(p.lat), lng: p.lng == null ? null : Number(p.lng),
+      capacity_kwp: p.capacity_kwp == null ? null : Number(p.capacity_kwp), inverter_kw: p.inverter_kw == null ? null : Number(p.inverter_kw),
+      annual_generation_kwh: p.annual_generation_kwh == null ? null : Number(p.annual_generation_kwh),
+      annual_savings_usd: p.annual_savings_usd == null ? null : Number(p.annual_savings_usd), co2_avoided_t: p.co2_avoided_t == null ? null : Number(p.co2_avoided_t),
+      cover: cover ? media.get(cover.media_id) ?? null : null,
+      gallery: pm.filter((m) => m.role === 'gallery').map((m) => media.get(m.media_id)).filter((m): m is MediaRef => !!m),
+    } as ProjectRecord;
+  });
+}
+function projectDbError(e: { code?: string; message: string }): Error {
+  if (e.code === '23505') return new Error(e.message.includes('slug') ? 'Ya existe otro proyecto con esa URL.' : e.message.includes('one_cover') ? 'El proyecto ya tiene portada.' : 'Registro duplicado.');
+  if (e.code === '23514') {
+    const m: Record<string, string> = {
+      client_authorized_needs_name: 'Marcaste el nombre del cliente como autorizado, pero no lo ingresaste.',
+      location_authorized_needs_coords: 'Para mostrar el proyecto en el mapa ingresa sus coordenadas.',
+      coords_in_ecuador: 'Las coordenadas están fuera del Ecuador.',
+      testimonial_verified_needs_text: 'Un testimonio verificado necesita el texto y su autor.',
+      project_figures_non_negative: 'Las cifras del proyecto no pueden ser negativas.',
+    };
+    const k = Object.keys(m).find((x) => e.message.includes(x));
+    if (k) return new Error(m[k]);
+  }
+  return new Error(e.message);
+}
 const PRODUCT_SELECT = '*, brands(name), product_categories(slug), product_prices(tier, price, promo_price, promo_until)';
 const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 /** Traduce las restricciones de Postgres a mensajes para el panel. */
@@ -404,10 +478,32 @@ const supabaseStore: Store = {
   async listStats() { return must(await sb().from('company_stats').select('*').order('sort')) as Stat[]; },
   async saveStat(s) { must(await sb().from('company_stats').upsert(s)); },
   async listProjects(o) {
-    let q = sb().from('projects').select('*').order('executed_on', { ascending: false, nullsFirst: false });
+    let q = sb().from('projects').select(PROJECT_SELECT).order('executed_on', { ascending: false, nullsFirst: false });
     if (!o?.includeUnpublished) q = q.eq('published', true);
-    return (must(await q) as any[]).map((p) => ({ ...p, client_name: p.client_name_authorized ? p.client_name : null, annual_savings_usd: p.financials_authorized ? p.annual_savings_usd : null, is_placeholder: false })) as Project[];
+    return (await mapProjectRecords(must(await q) as any[])).map(toPublicProject);
   },
+  async listProjectRecords() { return mapProjectRecords(must(await sb().from('projects').select(PROJECT_SELECT).order('title')) as any[]); },
+  async getProjectRecord(id) {
+    if (!isUuid(id)) return null;
+    const r = must(await sb().from('projects').select(PROJECT_SELECT).eq('id', id).maybeSingle());
+    return r ? (await mapProjectRecords([r]))[0] : null;
+  },
+  async saveProject(input) {
+    const c = sb();
+    const { id, cover_id, gallery_ids, ...row } = input;
+    const r = id ? await c.from('projects').update(row).eq('id', id).select('id').maybeSingle() : await c.from('projects').insert(row).select('id').single();
+    if (r.error) throw projectDbError(r.error);
+    if (!r.data) throw new Error('Proyecto no encontrado.');
+    const pid = (r.data as { id: string }).id;
+    // Medios: se reemplaza el conjunto (portada + galería en orden). project_media_one_cover garantiza una sola portada.
+    const del = await c.from('project_media').delete().eq('project_id', pid).in('role', ['cover', 'gallery']);
+    if (del.error) throw projectDbError(del.error);
+    const links = [...(cover_id ? [{ project_id: pid, media_id: cover_id, role: 'cover', sort: 0 }] : []),
+      ...gallery_ids.map((m, i) => ({ project_id: pid, media_id: m, role: 'gallery', sort: i }))];
+    if (links.length) { const ins = await c.from('project_media').insert(links); if (ins.error) throw projectDbError(ins.error); }
+    return pid;
+  },
+  async deleteProject(id) { const r = await sb().from('projects').delete().eq('id', id); if (r.error) throw projectDbError(r.error); },
   async listBrands(o) {
     let q = sb().from('brands').select('*').order('sort');
     if (!o?.includeUnpublished) q = q.eq('published', true);

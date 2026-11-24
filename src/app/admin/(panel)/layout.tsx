@@ -7,7 +7,7 @@ import { logoutAction } from '../actions';
 export const dynamic = 'force-dynamic';
 export const metadata = { robots: { index: false } };
 const NAV: [string, string, Perm][] = [
-  ['/admin', 'Dashboard', 'dashboard'], ['/admin/leads', 'CRM · Leads', 'leads'], ['/admin/pedidos', 'Pedidos', 'orders'], ['/admin/productos', 'Productos', 'products'],
+  ['/admin', 'Dashboard', 'dashboard'], ['/admin/leads', 'CRM · Leads', 'leads'], ['/admin/pedidos', 'Pedidos', 'orders'], ['/admin/productos', 'Productos', 'products'], ['/admin/proyectos', 'Proyectos', 'projects'],
   ['/admin/parametros', 'Parámetros de cálculo', 'params'], ['/admin/tarifas', 'Tarifas eléctricas', 'tariffs'], ['/admin/indicadores', 'Indicadores de inicio', 'stats'],
 ];
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {

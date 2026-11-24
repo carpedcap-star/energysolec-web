@@ -21,7 +21,8 @@
 ## Fase 2 — Administración completa y automatización (estimado: 3–4 semanas)
 
 - ✅ Panel de productos: CRUD con precios por nivel y promociones, inventario, imágenes y ficha técnica en `public-media` (`/admin/productos`).
-- Pantallas del panel para contenido (textos e imágenes por sección), proyectos con galería y carga de medios, marcas, servicios, blog con editor, usuarios y permisos, identidad gráfica e integraciones. Hoy se gestionan desde Supabase Studio.
+- ✅ Panel de proyectos: CRUD con portada y galería, banderas de autorización, coordenadas con vista previa en el mapa (`/admin/proyectos`) y migración `0003` de privacidad.
+- Pantallas del panel para contenido (textos e imágenes por sección), marcas, servicios, blog con editor, usuarios y permisos, identidad gráfica e integraciones. Hoy se gestionan desde Supabase Studio.
 - Formularios guiados por campo para parámetros y tarifas (hoy editor JSON validado).
 - Carga de planilla eléctrica en PDF o foto con extracción por IA y confirmación del cliente (tabla y bucket ya creados).
 - Flujo industrial con carga de documentos (curva de carga, planos).

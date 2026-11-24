@@ -7,6 +7,7 @@ import { getStore } from '@/lib/data/store';
 import { CalcParams } from '@/lib/engine/params';
 import { LEAD_STAGES, ORDER_STATUSES, PAID_STATES, type AppRole } from '@/lib/data/types';
 import { checkUpload, parseProductForm, UPLOAD_LIMITS, type SniffedType } from '@/lib/services/catalog';
+import { parseProjectForm, PROJECT_MEDIA_LIMITS } from '@/lib/services/projects';
 
 export async function loginAction(_: unknown, fd: FormData) {
   const err = await signIn(String(fd.get('email') ?? ''), String(fd.get('password') ?? ''), (fd.get('role') as AppRole) || 'superadmin');
@@ -149,4 +150,64 @@ export async function deleteProductAction(id: string, _: unknown, _fd: FormData)
   try { await store.deleteProduct(id); } catch (e) { return { error: (e as Error).message }; }
   revalidateCatalog(prev.slug);
   redirect(`/admin/productos?eliminado=${encodeURIComponent(prev.sku)}`);
+}
+
+// ---------------------------------------------------------------- Proyectos
+async function checkedImages(list: File[]): Promise<{ bytes: Uint8Array; t: SniffedType }[] | string> {
+  const out: { bytes: Uint8Array; t: SniffedType }[] = [];
+  for (const f of list) {
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    const t = checkUpload(bytes, 'image', f.name);
+    if (typeof t === 'string') return t;
+    out.push({ bytes, t });
+  }
+  return out;
+}
+function revalidateProjects(...slugs: (string | undefined)[]) {
+  revalidatePath('/admin/proyectos'); revalidatePath('/proyectos'); revalidatePath('/'); revalidatePath('/sitemap.xml');
+  revalidatePath('/soluciones/[segmento]', 'page');
+  for (const s of new Set(slugs.filter(Boolean))) revalidatePath(`/proyectos/${s}`);
+}
+
+export async function saveProjectAction(_: unknown, fd: FormData): Promise<{ error?: string }> {
+  await requireStaff('projects');
+  const parsed = parseProjectForm(fd);
+  if ('error' in parsed) return { error: parsed.error };
+  const input = parsed.data;
+  const store = getStore();
+  const prev = input.id ? await store.getProjectRecord(input.id) : null;
+  if (input.id && !prev) return { error: 'Proyecto no encontrado.' };
+
+  // Solo se conservan fotos que ya pertenecen a este proyecto.
+  const own = new Set([...(prev?.gallery.map((m) => m.id) ?? []), ...(prev?.cover ? [prev.cover.id] : [])]);
+  if (input.gallery_ids.some((id) => !own.has(id)) || (input.cover_id && !own.has(input.cover_id)))
+    return { error: 'Las fotos cambiaron mientras editabas. Recarga la página.' };
+
+  const coverFile = files(fd.getAll('new_cover'))[0];
+  const galleryFiles = files(fd.getAll('new_gallery'));
+  if (input.gallery_ids.length + galleryFiles.length > PROJECT_MEDIA_LIMITS.gallery) return { error: `Máximo ${PROJECT_MEDIA_LIMITS.gallery} fotos en la galería.` };
+  const cover = await checkedImages(coverFile ? [coverFile] : []);
+  if (typeof cover === 'string') return { error: cover };
+  const gallery = await checkedImages(galleryFiles);
+  if (typeof gallery === 'string') return { error: gallery };
+
+  let id: string;
+  try {
+    const up = (c: { bytes: Uint8Array; t: SniffedType }) => store.uploadMedia({ bytes: c.bytes, mime: c.t.mime, ext: c.t.ext, kind: 'image', folder: 'projects', alt: input.title });
+    if (cover[0]) input.cover_id = (await up(cover[0])).id;
+    for (const g of gallery) input.gallery_ids.push((await up(g)).id);
+    id = await store.saveProject(input);
+  } catch (e) { return { error: (e as Error).message }; }
+  revalidateProjects(prev?.slug, input.slug);
+  redirect(`/admin/proyectos/${id}?guardado=1`);
+}
+
+export async function deleteProjectAction(id: string, _: unknown, _fd: FormData): Promise<{ error?: string }> {
+  await requireStaff('projects');
+  const store = getStore();
+  const prev = await store.getProjectRecord(id);
+  if (!prev) return { error: 'Proyecto no encontrado.' };
+  try { await store.deleteProject(id); } catch (e) { return { error: (e as Error).message }; }
+  revalidateProjects(prev.slug);
+  redirect(`/admin/proyectos?eliminado=${encodeURIComponent(prev.title)}`);
 }

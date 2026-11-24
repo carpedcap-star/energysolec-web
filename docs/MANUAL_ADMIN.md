@@ -53,11 +53,20 @@ Campos clave: `pricing.pvTiers` (USD/kWp sin IVA por tramo), `pricing.batteryUsd
 - Un **producto de ejemplo** no puede publicarse. Desmárcalo solo cuando los datos sean reales y verificados.
 - Un producto que figura en pedidos no se elimina: despublícalo para conservar el historial.
 
-## Contenido, proyectos, marcas y usuarios
+## Proyectos
 
-Hasta que se entreguen las pantallas de la fase 2, se gestionan desde **Supabase Studio → Table Editor** (tablas `content_blocks`, `projects`, `brands`, `services`, `blog_posts`, `profiles`) y **Storage → public-media** para imágenes y fichas técnicas. Reglas que la base de datos hace cumplir:
+**/admin/proyectos** (roles *superadmin*, *marketing* e *ingeniería*): lista con columna de autorizaciones, alta, edición y eliminación.
+
+- Cada dato sensible tiene su autorización: **nombre del cliente**, **punto en el mapa** (coordenadas), **ahorro anual** y **testimonio** (verificado). Sin ella, el dato se guarda pero no se publica. El recuadro «Qué verá el público» lo muestra antes de guardar.
+- Si el cliente no autorizó su nombre, el **título y la URL** no pueden contenerlo: usa un título genérico («Empacadora en Guayas, 250 kWp»).
+- Coordenadas: pega «lat, lng» desde Google Maps en el campo Latitud. Deben estar dentro del Ecuador (incluye Galápagos).
+- Fotos: una portada y hasta 20 fotos de galería (JPG, PNG o WebP, 5 MB). La portada del sitio muestra los 3 destacados más recientes.
+
+## Contenido, marcas y usuarios
+
+Hasta que se entreguen las pantallas de la fase 2, se gestionan desde **Supabase Studio → Table Editor** (tablas `content_blocks`, `brands`, `services`, `blog_posts`, `profiles`) y **Storage → public-media** para imágenes y fichas técnicas. Reglas que la base de datos hace cumplir:
 
 - Un producto con `is_placeholder = true` no puede publicarse.
-- Un proyecto muestra el cliente solo con `client_name_authorized`, la ubicación en el mapa solo con `location_authorized` y el ahorro solo con `financials_authorized`.
+- Un proyecto muestra el cliente solo con `client_name_authorized`, la ubicación en el mapa solo con `location_authorized`, el ahorro solo con `financials_authorized` y el testimonio solo con `testimonial_verified` (vista `projects_public`; la clave pública no puede leer esas columnas de la tabla).
 - Una marca muestra su relación comercial solo con `relationship_verified` y documento de respaldo.
 - Todos los cambios quedan en `audit_log` con el usuario y los valores anteriores.

@@ -4,7 +4,8 @@ import type { Metadata } from 'next';
 import { getStore } from '@/lib/data/store';
 import { requireStaff } from '@/lib/auth';
 import { ProductForm } from '../product-form';
-import { DeleteProduct } from '../delete-product';
+import { deleteProductAction } from '../../../actions';
+import { DeleteRecord } from '../../delete-record';
 
 export const metadata: Metadata = { title: 'Editar producto', description: 'Edición de producto del catálogo', robots: { index: false } };
 
@@ -24,7 +25,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       </div>
       {saved && <p role="status" className="mt-4 rounded-xl bg-green-50 px-4 py-2 text-sm text-green-800">Cambios guardados.</p>}
       <ProductForm key={p.updated_at ?? p.id} product={p} brands={brands.map((b) => ({ id: b.id, name: b.name }))} />
-      <DeleteProduct id={p.id} name={p.name} />
+      <DeleteRecord action={deleteProductAction.bind(null, p.id)} name={p.name} title="Eliminar producto"
+        note="Si el producto ya figura en pedidos no se puede eliminar: despublícalo para conservar el historial." />
     </div>
   );
 }

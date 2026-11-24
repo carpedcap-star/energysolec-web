@@ -29,7 +29,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
           <div>
             {p.is_placeholder && <span className="placeholder-badge mb-3">Producto de ejemplo · no a la venta</span>}
             <p className="text-sm uppercase tracking-wider text-muted">{p.brand ?? 'Marca por definir'} · Modelo {p.model ?? '—'} · SKU {p.sku}</p>
-            <h1 className="font-display mt-2 text-3xl font-extrabold sm:text-4xl">{p.name}</h1>
+            <h1 className="font-display mt-2 break-words text-3xl font-extrabold hyphens-auto sm:text-4xl">{p.name}</h1>
             {p.summary && <p className="mt-4 text-muted">{p.summary}</p>}
             <div className="mt-6">{price > 0 ? <p className="font-display text-3xl font-bold">{fmtUsd2(price)} <span className="text-base font-normal text-muted">+ IVA {Math.round(p.vat_rate * 100)} %</span></p> : <p className="font-semibold">Precio a consultar con un asesor</p>}</div>
             <div className="mt-6"><AddToCart p={{ ...p, price }} /></div>

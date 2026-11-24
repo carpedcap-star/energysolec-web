@@ -4,10 +4,10 @@ import { saveProductAction } from '../../actions';
 import { AVAILABILITY, PRICE_TIERS, type MediaRef, type ProductRecord } from '@/lib/data/types';
 import { PRODUCT_CATEGORIES } from '@/lib/data/seed';
 import { promoUntilToDate, slugify, UPLOAD_LIMITS } from '@/lib/services/catalog';
+import { Field, IconBtn, mb, Section } from '../form-ui';
 
 type Brand = { id: string; name: string };
 const MAX_REQUEST = 24 * 1024 * 1024; // margen bajo el límite de 25 MB de las server actions
-const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
 
 export function ProductForm({ product: p, brands }: { product: ProductRecord | null; brands: Brand[] }) {
   const [state, dispatch, pending] = useActionState(saveProductAction, null);
@@ -234,26 +234,4 @@ export function ProductForm({ product: p, brands }: { product: ProductRecord | n
       </div>
     </form>
   );
-}
-
-function Section({ title, intro, children }: { title: string; intro?: string; children: React.ReactNode }) {
-  return (
-    <section className="card p-5 sm:p-6">
-      <h2 className="text-lg font-semibold">{title}</h2>
-      {intro && <p className="mt-1 text-sm text-muted">{intro}</p>}
-      <div className="mt-4">{children}</div>
-    </section>
-  );
-}
-function Field({ id, label, hint, className = '', children }: { id: string; label: string; hint?: string; className?: string; children: React.ReactNode }) {
-  return (
-    <div className={`min-w-0 ${className}`}>
-      <label htmlFor={id} className="label">{label}</label>
-      {children}
-      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
-    </div>
-  );
-}
-function IconBtn({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
-  return <button type="button" aria-label={label} title={label} onClick={onClick} disabled={disabled} className="grid h-8 w-8 place-items-center rounded-full border border-line text-sm hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-accent disabled:opacity-30">{children}</button>;
 }

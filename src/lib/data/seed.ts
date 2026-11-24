@@ -1,4 +1,4 @@
-import type { Brand, Product, Project, Stat } from './types';
+import type { Brand, Product, ProjectRecord, Stat } from './types';
 
 /**
  * Datos semilla. TODO está marcado como provisional:
@@ -12,15 +12,16 @@ export const SEED_STATS: Stat[] = [
   'Energía generada (MWh)', 'Años de experiencia', 'Clientes atendidos',
 ].map((label, i) => ({ id: `stat-${i}`, label, value: 0, unit: null, source_note: 'PENDIENTE: dato real a ingresar por Gerencia', verified: false, sort: i }));
 
-const projectStub = (slug: string, title: string, segment: Project['segment'], industry: string): Project => ({
+const projectStub = (slug: string, title: string, segment: ProjectRecord['segment'], industry: string): ProjectRecord => ({
   id: `prj-${slug}`, slug, title, client_name: null, segment, industry, province: null, city: null, lat: null, lng: null,
   location_authorized: false, capacity_kwp: null, inverter_kw: null, panel_count: null, installation_type: null, technology: [],
   annual_generation_kwh: null, generation_is_measured: false, annual_savings_usd: null, co2_avoided_t: null, executed_on: null,
-  status: 'finalizado', description: null, testimonial: null, testimonial_author: null, cover: null,
+  status: 'finalizado', description: null, testimonial: null, testimonial_author: null, cover: null, gallery: [],
   published: false, featured: false, is_placeholder: true,
+  client_name_authorized: false, financials_authorized: false, testimonial_verified: false, updated_at: null,
 });
 
-export const SEED_PROJECTS: Project[] = [
+export const SEED_PROJECTS: ProjectRecord[] = [
   projectStub('empacreci', 'Empacreci', 'industrial', 'Empacadora'),
   projectStub('hotel-los-ceibos', 'Hotel Los Ceibos', 'comercial', 'Hotelería'),
   projectStub('importadora-chinatown', 'Importadora Chinatown', 'comercial', 'Comercio'),

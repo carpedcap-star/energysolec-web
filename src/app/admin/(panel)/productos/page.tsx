@@ -46,7 +46,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ q
         <button className="btn-ghost">Filtrar</button>
       </form>
 
-      <div className="card mt-6 overflow-x-auto">
+      <div className="card relative mt-6 overflow-x-auto">
         <table className="w-full min-w-[860px] text-sm">
           <caption className="sr-only">Productos del catálogo</caption>
           <thead className="bg-surface text-left text-xs uppercase tracking-wider text-muted">

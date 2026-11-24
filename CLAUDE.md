@@ -29,14 +29,15 @@ Next.js 15 App Router · TypeScript estricto · Tailwind 3 · Supabase (Postgres
 - `src/lib/auth.ts` — `PERMS` (matriz de roles), `requireStaff(perm)`. Debe mantenerse en espejo con la RLS de `supabase/migrations/0002_rls.sql`.
 - `src/app/api/*` — escrituras públicas: validar con Zod (`src/lib/schemas.ts`), `guard()` para el límite de solicitudes, `verifyHuman()` para el anti-spam.
 - `src/app/admin/actions.ts` — server actions del panel; cada una empieza con `requireStaff`.
-- `supabase/migrations/` — nunca edites una migración ya aplicada en producción; crea `0003_*.sql`.
+- `supabase/migrations/` — nunca edites una migración ya aplicada en producción; crea la siguiente (`0004_*.sql`).
+- Modo desarrollo: React 19 envía al navegador el valor de cada E/S asíncrona que espera un componente de servidor (para DevTools). Por eso el almacén local lee su archivo con `readFileSync`. En producción no ocurre, pero no conectes `next dev` a datos reales sensibles.
 - `src/content/segments.ts` — textos base de las unidades de negocio y la lista de servicios.
 
 ## Reglas de negocio NO negociables
 
 1. **Nada inventado.** No se publican estadísticas, precios, productos, testimonios, certificaciones ni relaciones con marcas sin respaldo. El contenido provisional se marca de forma visible (`placeholder-badge`, `is_placeholder`).
 2. Indicadores de portada: solo `verified=true` y con `source_note`.
-3. Proyectos: nombre del cliente, ubicación en el mapa y cifras financieras solo con sus banderas `*_authorized`.
+3. Proyectos: nombre del cliente, ubicación en el mapa y cifras financieras solo con sus banderas `*_authorized`; el testimonio solo con `testimonial_verified`. Todo lo público sale por `toPublicProject` (y en la base, por la vista `projects_public`): nunca envíes un `ProjectRecord` a un componente público.
 4. Calculadora:
    - Pérdidas de sistema aplicadas una sola vez: las fuentes se piden con `loss=0`.
    - Excedentes valen $0 salvo que `exportCompensation` esté configurado.
@@ -73,7 +74,7 @@ Next.js 15 App Router · TypeScript estricto · Tailwind 3 · Supabase (Postgres
 ## Siguiente trabajo (Fase 2, en orden sugerido)
 
 1. ✅ Panel: CRUD de productos, con precios por nivel, inventario, imágenes y ficha técnica en el bucket `public-media` (`/admin/productos`; lógica pura y pruebas en `src/lib/services/catalog.ts`; en desarrollo los archivos van a `.data/media/` y se sirven por `/api/dev-media`).
-2. Panel: CRUD de proyectos, con galería, banderas de autorización y coordenadas para el mapa.
+2. ✅ Panel: CRUD de proyectos, con galería, banderas de autorización y coordenadas para el mapa (`/admin/proyectos`; enmascarado y validación en `src/lib/services/projects.ts`; migración `0003_project_privacy.sql`).
 3. Panel: bloques de contenido (`content_blocks`) y que las páginas públicas lean de ahí, con fallback a `src/content/`.
 4. Panel: marcas (con documento de respaldo), servicios, blog, usuarios y roles, identidad gráfica (`site_settings.brand` → variables CSS).
 5. Formularios guiados por campo para parámetros y tarifas (hoy son editores JSON validados con Zod).

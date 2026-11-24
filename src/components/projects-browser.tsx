@@ -3,10 +3,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { Project } from '@/lib/data/types';
 import { fmtKwp } from '@/lib/format';
-
-// Mapa del Ecuador continental simplificado: proyección lineal lat/lng → SVG (sin dependencias ni claves de API)
-const BOX = { minLng: -81.2, maxLng: -75.1, minLat: -5.1, maxLat: 1.6 };
-const xy = (lat: number, lng: number) => [((lng - BOX.minLng) / (BOX.maxLng - BOX.minLng)) * 400, ((BOX.maxLat - lat) / (BOX.maxLat - BOX.minLat)) * 440];
+import { EcuadorMap } from './ecuador-map';
 
 export function ProjectsBrowser({ projects }: { projects: Project[] }) {
   const [seg, setSeg] = useState(''), [prov, setProv] = useState(''), [year, setYear] = useState(''), [type, setType] = useState(''), [tech, setTech] = useState(''), [cap, setCap] = useState('');
@@ -41,10 +38,7 @@ export function ProjectsBrowser({ projects }: { projects: Project[] }) {
         </div>
         <div className="card self-start p-5 lg:sticky lg:top-24">
           <p className="mb-3 text-sm font-semibold">Mapa de proyectos (ubicaciones autorizadas)</p>
-          <svg viewBox="0 0 400 440" className="w-full rounded-xl bg-surface" role="img" aria-label="Mapa de proyectos en Ecuador">
-            <path d="M60 40 L150 20 L230 35 L300 60 L380 80 L395 150 L360 230 L330 300 L300 380 L250 430 L200 420 L170 380 L120 360 L80 320 L40 290 L20 230 L35 170 L25 110 Z" fill="#ece9e4" stroke="#d6d2cc" />
-            {mapped.map((p) => { const [x, y] = xy(p.lat!, p.lng!); return <a key={p.id} href={`/proyectos/${p.slug}`}><circle cx={x} cy={y} r={Math.max(5, Math.min(14, Math.sqrt(p.capacity_kwp ?? 25)))} fill="#FDC913" stroke="#282626" strokeWidth="1.5"><title>{p.title}</title></circle></a>; })}
-          </svg>
+          <EcuadorMap label="Mapa de proyectos en Ecuador" points={mapped.map((p) => ({ id: p.id, lat: p.lat!, lng: p.lng!, label: p.title, href: `/proyectos/${p.slug}`, r: Math.max(5, Math.min(14, Math.sqrt(p.capacity_kwp ?? 25))) }))} />
           {!mapped.length && <p className="mt-3 text-xs text-muted">Aún no hay ubicaciones autorizadas para mostrar.</p>}
         </div>
       </div>
