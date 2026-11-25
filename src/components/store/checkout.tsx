@@ -1,13 +1,26 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useCart } from '../cart';
 import { getUtm, track } from '../consent';
 import { fmtUsd2 } from '@/lib/format';
 import { IconWhatsapp } from '../icons';
 
-export function CartCheckout() {
-  const { lines, setQty, remove, subtotal, tax, clear } = useCart();
+export type CheckoutTrade = { company: string; contact_name: string; email: string; phone: string | null; city: string | null; tier: string; tierLabel: string };
+
+export function CartCheckout({ trade }: { trade?: CheckoutTrade | null }) {
+  const { lines, setQty, remove, subtotal, tax, clear, reprice } = useCart();
+  const ids = lines.map((l) => l.productId).sort().join(',');
+  // El carrito guarda el precio del momento en que se agregó: se actualiza al nivel y precio vigentes de la sesión.
+  useEffect(() => {
+    if (!ids) return;
+    let alive = true;
+    fetch('/api/cart/prices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: ids.split(',') }) })
+      .then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive && j?.prices) reprice(j.prices); }).catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ids]);
+  const orderable = lines.filter((l) => !l.unavailable);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [done, setDone] = useState<{ number: string; whatsappUrl: string; total: number; sentViaApi: boolean } | null>(null);
@@ -17,9 +30,9 @@ export function CartCheckout() {
     const f = new FormData(e.currentTarget);
     setBusy(true); setErr('');
     const r = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-      lines: lines.map((l) => ({ productId: l.productId, qty: l.qty })),
+      lines: orderable.map((l) => ({ productId: l.productId, qty: l.qty })),
       name: f.get('name'), email: f.get('email'), phone: f.get('phone'), city: f.get('city'), address: f.get('address'),
-      customerType: f.get('customerType'), notes: f.get('notes') || '', needsInstallation: f.get('install') === 'on',
+      customerType: trade ? trade.tier : f.get('customerType'), notes: f.get('notes') || '', needsInstallation: f.get('install') === 'on',
       acceptPrivacy: f.get('privacy') === 'on', acceptMarketing: f.get('marketing') === 'on', utm: getUtm(), website: f.get('website') || '',
     }) }).catch(() => null);
     setBusy(false);
@@ -49,7 +62,8 @@ export function CartCheckout() {
             <div key={l.productId} className="flex flex-wrap items-center gap-4 p-5">
               <div className="min-w-0 flex-1">
                 <Link href={`/tienda/${l.slug}`} className="font-medium hover:underline">{l.name}</Link>
-                <p className="text-xs text-muted">SKU {l.sku} · {l.unitPrice > 0 ? `${fmtUsd2(l.unitPrice)} c/u` : 'Precio a consultar'}</p>
+                <p className="text-xs text-muted">SKU {l.sku} · {l.unitPrice > 0 ? `${fmtUsd2(l.unitPrice)} c/u` : 'Precio a consultar'}{trade && l.tierApplied && l.tierApplied !== 'final' ? ` · precio ${trade.tierLabel.toLowerCase()}` : ''}{trade && l.tierApplied === 'final' ? ' · precio cliente final' : ''}</p>
+                {l.unavailable && <p className="text-xs font-semibold text-red-700">Ya no está disponible: no se incluirá en el pedido.</p>}
                 {l.placeholder && <span className="placeholder-badge mt-1">Ejemplo</span>}
               </div>
               <input type="number" min={1} max={9999} value={l.qty} onChange={(e) => setQty(l.productId, +e.target.value)} className="input !w-20" aria-label={`Cantidad de ${l.name}`} />
@@ -67,12 +81,16 @@ export function CartCheckout() {
       </div>
       <form onSubmit={submit} className="card grid gap-4 self-start p-6 sm:grid-cols-2">
         <p className="font-semibold sm:col-span-2">Datos para tu pedido</p>
+        {trade && <p className="rounded-xl bg-sky-50 px-4 py-3 text-sm sm:col-span-2" role="status">Pedido de <b>{trade.company}</b> con precios de {trade.tierLabel.toLowerCase()}.</p>}
         <input type="text" name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden />
-        <div className="sm:col-span-2"><label className="label" htmlFor="o-name">Nombre *</label><input id="o-name" name="name" required minLength={2} className="input" autoComplete="name" /></div>
-        <div><label className="label" htmlFor="o-email">Correo *</label><input id="o-email" name="email" type="email" required className="input" autoComplete="email" /></div>
-        <div><label className="label" htmlFor="o-phone">Teléfono / WhatsApp *</label><input id="o-phone" name="phone" type="tel" required className="input" autoComplete="tel" /></div>
-        <div><label className="label" htmlFor="o-city">Ciudad *</label><input id="o-city" name="city" required className="input" autoComplete="address-level2" /></div>
-        <div><label className="label" htmlFor="o-type">Tipo de cliente *</label><select id="o-type" name="customerType" className="input" required><option value="final">Cliente final</option><option value="empresa">Empresa</option><option value="instalador">Instalador</option><option value="distribuidor">Distribuidor</option></select></div>
+        <div className="sm:col-span-2"><label className="label" htmlFor="o-name">Nombre *</label><input id="o-name" name="name" required minLength={2} className="input" autoComplete="name" defaultValue={trade?.contact_name} /></div>
+        <div><label className="label" htmlFor="o-email">Correo *</label><input id="o-email" name="email" type="email" required className="input" autoComplete="email" defaultValue={trade?.email} /></div>
+        <div><label className="label" htmlFor="o-phone">Teléfono / WhatsApp *</label><input id="o-phone" name="phone" type="tel" required className="input" autoComplete="tel" defaultValue={trade?.phone ?? undefined} /></div>
+        <div><label className="label" htmlFor="o-city">Ciudad *</label><input id="o-city" name="city" required className="input" autoComplete="address-level2" defaultValue={trade?.city ?? undefined} /></div>
+        {trade
+          ? <div><p className="label">Tipo de cliente</p><p className="input bg-surface">{trade.tierLabel}</p></div>
+          : <div><label className="label" htmlFor="o-type">Tipo de cliente *</label><select id="o-type" name="customerType" className="input" required><option value="final">Cliente final</option><option value="empresa">Empresa</option><option value="instalador">Instalador</option><option value="distribuidor">Distribuidor</option></select>
+              <p className="mt-1 text-xs text-muted">Precios de instalador o distribuidor solo con <Link href="/cuenta/ingresar?next=/carrito" className="underline">cuenta comercial</Link>.</p></div>}
         <div className="sm:col-span-2"><label className="label" htmlFor="o-address">Dirección de entrega *</label><input id="o-address" name="address" required minLength={5} className="input" autoComplete="street-address" /></div>
         <div className="sm:col-span-2"><label className="label" htmlFor="o-notes">Observaciones</label><textarea id="o-notes" name="notes" rows={2} className="input" maxLength={1000} /></div>
         <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" name="install" /> Requiero instalación</label>
@@ -81,7 +99,7 @@ export function CartCheckout() {
           <label className="flex items-start gap-2"><input type="checkbox" name="marketing" className="mt-1" /> <span>Autorizo recibir promociones y novedades (opcional).</span></label>
         </div>
         {err && <p className="text-sm text-red-600 sm:col-span-2" role="alert">{err}</p>}
-        <button className="btn-primary sm:col-span-2" disabled={busy}>{busy ? 'Registrando…' : 'Registrar pedido y continuar por WhatsApp'}</button>
+        <button className="btn-primary sm:col-span-2" disabled={busy || orderable.length === 0}>{busy ? 'Registrando…' : 'Registrar pedido y continuar por WhatsApp'}</button>
       </form>
     </div>
   );

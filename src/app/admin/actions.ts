@@ -20,6 +20,8 @@ import { parseBrandForm } from '@/lib/services/brands';
 import { parseServiceForm } from '@/lib/services/service-catalog';
 import { parsePostForm } from '@/lib/services/blog';
 import { SERVICES } from '@/content/segments';
+import { canTransition, requiresApprover, ReviewSchema, tierLabel, TRADE_STATUS } from '@/lib/services/trade';
+import { sendTradeAccessEmail, tradeAccessUrl } from '@/lib/services/trade-mail';
 
 export async function loginAction(_: unknown, fd: FormData) {
   const err = await signIn(String(fd.get('email') ?? ''), String(fd.get('password') ?? ''), (fd.get('role') as AppRole) || 'superadmin');
@@ -574,4 +576,40 @@ export async function saveIdentityAction(_: unknown, fd: FormData): Promise<{ er
   } catch (e) { return { error: (e as Error).message }; }
   revalidatePath('/', 'layout'); // colores y logos afectan a todas las páginas
   redirect('/admin/identidad?guardado=1');
+}
+
+// ---------------------------------------------------------------- Cuentas comerciales
+export async function reviewTradeAction(id: string, _: unknown, fd: FormData): Promise<LinkResult> {
+  const staff = await requireStaff('trade');
+  const p = ReviewSchema.safeParse({ status: fd.get('status'), tier: fd.get('tier'), review_note: String(fd.get('review_note') ?? '') });
+  if (!p.success) return { error: p.error.issues[0]?.message ?? 'Datos no válidos' };
+  const r = p.data;
+  const store = getStore();
+  const t = await store.getTradeAccount(id);
+  if (!t) return { error: 'Cuenta no encontrada.' };
+  if (!canTransition(t.status, r.status)) return { error: `No se puede pasar de «${TRADE_STATUS[t.status]}» a «${TRADE_STATUS[r.status]}».` };
+  if (requiresApprover(r.status) && !can(staff, 'trade_approve')) return { error: 'Solo Gerencia puede aprobar o suspender cuentas comerciales.' };
+  let link: Awaited<ReturnType<typeof store.reviewTradeAccount>>;
+  try { link = await store.reviewTradeAccount(id, r, staff.id); } catch (e) { return { error: (e as Error).message }; }
+  if (t.lead_id) await store.addActivity(t.lead_id, 'sistema', `Cuenta comercial ${TRADE_STATUS[r.status].toLowerCase()} (${tierLabel(r.tier).toLowerCase()})${r.review_note ? `: ${r.review_note}` : ''}`, staff.id).catch(() => {});
+  revalidatePath('/admin/cuentas');
+  if (link) {
+    const url = await tradeAccessUrl(link.token_hash, link.type);
+    const emailSent = await sendTradeAccessEmail(t.email, t.contact_name, t.company, url, 'invite');
+    return { ok: true, id, emailSent, link: emailSent ? undefined : url };
+  }
+  redirect(`/admin/cuentas/${id}?guardado=1`);
+}
+
+export async function sendTradeAccessLinkAction(id: string, _: unknown, _fd: FormData): Promise<LinkResult> {
+  await requireStaff('trade');
+  const store = getStore();
+  const t = await store.getTradeAccount(id);
+  if (!t || t.status !== 'aprobada') return { error: 'La cuenta no está aprobada.' };
+  let tok: { token_hash: string; type: 'invite' | 'recovery' };
+  try { tok = await store.createTradeAccessToken(id); } catch (e) { return { error: (e as Error).message }; }
+  const type = t.activated ? 'recovery' : 'invite';
+  const url = await tradeAccessUrl(tok.token_hash, type);
+  const emailSent = await sendTradeAccessEmail(t.email, t.contact_name, t.company, url, type);
+  return { ok: true, emailSent, link: emailSent ? undefined : url };
 }

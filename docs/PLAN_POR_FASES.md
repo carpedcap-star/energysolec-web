@@ -31,7 +31,7 @@
 - ✅ Formularios guiados para parámetros y tarifas, con reglas de coherencia, vista previa de factura y validación por Gerencia.
 - ✅ Carga de planilla eléctrica en PDF o foto con lectura por IA (API de Claude) y revisión y confirmación del cliente antes de calcular; planilla visible en la ficha del lead (migración `0005`). Requiere `ANTHROPIC_API_KEY`; pendiente: depurar las planillas no confirmadas con la tarea programada.
 - Flujo industrial con carga de documentos (curva de carga, planos).
-- Cuentas de instaladores y distribuidores con precios diferenciados en la tienda (base de datos y RLS ya preparadas).
+- ✅ Cuentas de instaladores y distribuidores: solicitud con RUC, aprobación por Gerencia, acceso propio y precios de su nivel en tienda, carrito y pedidos (migración `0006`).
 - Recordatorios automáticos de seguimiento y reintento de la cola de correos (tarea programada).
 - Caché del recurso solar por celda (tabla creada) y prueba en vivo de PVGIS y NASA POWER desde producción.
 - Pruebas automatizadas de extremo a extremo (Playwright) en CI.

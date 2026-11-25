@@ -5,6 +5,7 @@ import type { Product } from '@/lib/data/types';
 import { fmtUsd2 } from '@/lib/format';
 import { IconPanel } from '../icons';
 
+const TIER: Record<string, string> = { instalador: 'Instalador', distribuidor: 'Distribuidor' };
 const AV: Record<string, string> = { disponible: 'Disponible', bajo_pedido: 'Bajo pedido', agotado: 'Agotado', consultar: 'Consultar disponibilidad' };
 
 export function Catalog({ products, categories }: { products: Product[]; categories: readonly (readonly [string, string])[] }) {
@@ -44,7 +45,7 @@ export function Catalog({ products, categories }: { products: Product[]; categor
                 <Link href={`/tienda/${p.slug}`} className="mt-1 font-semibold leading-snug hover:underline">{p.name}</Link>
                 <p className="mt-1 text-xs text-muted">{AV[p.availability]}</p>
                 <div className="mt-auto flex items-end justify-between pt-4">
-                  <div>{p.price > 0 ? <>{p.promo_price && <p className="text-xs text-muted line-through">{fmtUsd2(p.price)}</p>}<p className="font-display text-lg font-bold">{fmtUsd2(p.promo_price ?? p.price)} <span className="text-xs font-normal text-muted">+ IVA</span></p></> : <p className="text-sm font-medium">Precio a consultar</p>}</div>
+                  <div>{p.tier_applied && p.tier_applied !== 'final' && <p className="text-xs font-semibold text-brand-accent">Tu precio · {TIER[p.tier_applied]}</p>}{p.price > 0 ? <>{p.promo_price && <p className="text-xs text-muted line-through">{fmtUsd2(p.price)}</p>}<p className="font-display text-lg font-bold">{fmtUsd2(p.promo_price ?? p.price)} <span className="text-xs font-normal text-muted">+ IVA</span></p></> : <p className="text-sm font-medium">Precio a consultar</p>}</div>
                   <label className="flex items-center gap-1.5 text-xs text-muted"><input type="checkbox" checked={compare.includes(p.id)} disabled={!compare.includes(p.id) && compare.length >= 4} onChange={(e) => setCompare((c) => e.target.checked ? [...c, p.id] : c.filter((x) => x !== p.id))} /> Comparar</label>
                 </div>
               </div>
@@ -52,7 +53,7 @@ export function Catalog({ products, categories }: { products: Product[]; categor
           ))}
         </div>
         {cmp.length >= 2 && (
-          <div className="card mt-10 overflow-x-auto p-5">
+          <div className="card relative mt-10 overflow-x-auto p-5">
             <p className="mb-4 font-semibold">Comparación de productos</p>
             <table className="w-full min-w-[520px] text-sm">
               <thead><tr><th className="py-2 text-left text-muted">Característica</th>{cmp.map((p) => <th key={p.id} className="py-2 text-left">{p.name}</th>)}</tr></thead>

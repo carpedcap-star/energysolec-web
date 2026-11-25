@@ -6,8 +6,11 @@ import { AddToCart } from '@/components/store/add-to-cart';
 import { fmtUsd2 } from '@/lib/format';
 import { IconPanel } from '@/components/icons';
 import { SITE } from '@/lib/site';
+import { getTradeAccount } from '@/lib/trade-auth';
+import { tierLabel } from '@/lib/services/trade';
 
-export const revalidate = 120;
+// Dinámica: con sesión comercial muestra precios de nivel, que nunca deben quedar en una caché compartida.
+export const dynamic = 'force-dynamic';
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const p = await getStore().getProductBySlug((await params).slug);
   return p ? { title: p.name, description: p.summary ?? undefined, alternates: { canonical: `/tienda/${p.slug}` }, robots: p.is_placeholder ? { index: false } : undefined } : {};
@@ -15,10 +18,14 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const p = await getStore().getProductBySlug(slug);
+  const trade = await getTradeAccount();
+  const p = await getStore().getProductBySlug(slug, trade?.tier);
   if (!p) notFound();
   const price = p.promo_price ?? p.price;
-  const ld = !p.is_placeholder && price > 0 ? { '@context': 'https://schema.org', '@type': 'Product', name: p.name, sku: p.sku, brand: p.brand ? { '@type': 'Brand', name: p.brand } : undefined, description: p.summary, offers: { '@type': 'Offer', priceCurrency: 'USD', price, availability: p.availability === 'disponible' ? 'https://schema.org/InStock' : 'https://schema.org/PreOrder', url: `${SITE.url}/tienda/${p.slug}` } } : null;
+  const tierPrice = !!p.tier_applied && p.tier_applied !== 'final';
+  // Los datos estructurados públicos llevan siempre el precio de cliente final, nunca el de un nivel comercial.
+  const publicPrice = tierPrice ? p.final_unit ?? 0 : price;
+  const ld = !p.is_placeholder && publicPrice > 0 && !trade ? { '@context': 'https://schema.org', '@type': 'Product', name: p.name, sku: p.sku, brand: p.brand ? { '@type': 'Brand', name: p.brand } : undefined, description: p.summary, offers: { '@type': 'Offer', priceCurrency: 'USD', price: publicPrice, availability: p.availability === 'disponible' ? 'https://schema.org/InStock' : 'https://schema.org/PreOrder', url: `${SITE.url}/tienda/${p.slug}` } } : null;
   return (
     <section className="pb-24 pt-32">
       {ld && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ld) }} />}
@@ -31,7 +38,12 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
             <p className="text-sm uppercase tracking-wider text-muted">{p.brand ?? 'Marca por definir'} · Modelo {p.model ?? '—'} · SKU {p.sku}</p>
             <h1 className="font-display mt-2 [overflow-wrap:anywhere] text-3xl font-extrabold sm:text-4xl">{p.name}</h1>
             {p.summary && <p className="mt-4 text-muted">{p.summary}</p>}
-            <div className="mt-6">{price > 0 ? <p className="font-display text-3xl font-bold">{fmtUsd2(price)} <span className="text-base font-normal text-muted">+ IVA {Math.round(p.vat_rate * 100)} %</span></p> : <p className="font-semibold">Precio a consultar con un asesor</p>}</div>
+            <div className="mt-6">
+              {tierPrice && <p className="text-sm font-semibold text-brand-accent">Tu precio de {tierLabel(p.tier_applied!).toLowerCase()}</p>}
+              {price > 0 ? <p className="font-display text-3xl font-bold">{fmtUsd2(price)} <span className="text-base font-normal text-muted">+ IVA {Math.round(p.vat_rate * 100)} %</span></p> : <p className="font-semibold">Precio a consultar con un asesor</p>}
+              {tierPrice && (p.final_unit ?? 0) > 0 && <p className="mt-1 text-sm text-muted">Precio cliente final: {fmtUsd2(p.final_unit!)}</p>}
+              {trade && !tierPrice && price > 0 && <p className="mt-1 text-sm text-muted">Este producto aún no tiene precio de {tierLabel(trade.tier).toLowerCase()}: se aplica el de cliente final.</p>}
+            </div>
             <div className="mt-6"><AddToCart p={{ ...p, price }} /></div>
             {p.installable && <p className="mt-4 text-sm text-muted">¿Necesitas instalación? Indícalo al finalizar tu pedido y un técnico te cotizará el servicio.</p>}
             <dl className="mt-8 divide-y divide-line border-y border-line text-sm">

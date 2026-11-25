@@ -1,6 +1,6 @@
 export type Segment = 'residencial' | 'comercial' | 'industrial';
 export type LeadStage = 'nuevo' | 'contactado' | 'calificado' | 'visita_tecnica' | 'cotizacion_enviada' | 'negociacion' | 'ganado' | 'perdido';
-export type LeadSource = 'calculadora' | 'tienda' | 'contacto' | 'cotizacion' | 'catalogo' | 'financiamiento' | 'capacitacion' | 'campana' | 'servicio';
+export type LeadSource = 'calculadora' | 'tienda' | 'contacto' | 'cotizacion' | 'catalogo' | 'financiamiento' | 'capacitacion' | 'campana' | 'servicio' | 'cuenta_comercial';
 export type OrderStatus = 'nuevo' | 'pendiente_contacto' | 'contactado' | 'cotizado' | 'confirmado' | 'pagado' | 'en_preparacion' | 'despachado' | 'entregado' | 'cancelado';
 export type AppRole = 'superadmin' | 'gerencia' | 'marketing' | 'ventas' | 'ingenieria' | 'compras';
 
@@ -43,6 +43,8 @@ export type Product = {
   certifications: string[]; images: string[]; datasheet_url: string | null; vat_rate: number; stock: number;
   availability: 'disponible' | 'bajo_pedido' | 'agotado' | 'consultar'; installable: boolean;
   price: number; promo_price: number | null; is_placeholder: boolean; published: boolean;
+  /** Nivel cuyo precio se aplicó (solo cuando se pide un nivel comercial) y precio de cliente final de referencia. */
+  tier_applied?: PriceTier; final_unit?: number;
 };
 
 export type PriceTier = 'final' | 'instalador' | 'distribuidor';
@@ -73,7 +75,21 @@ export type Order = {
   customer_type: 'final' | 'instalador' | 'distribuidor' | 'empresa'; notes: string | null; needs_installation: boolean;
   subtotal: number; tax: number; total: number; status: OrderStatus; payment_reference: string | null;
   payment_verified_by: string | null; payment_verified_at: string | null; whatsapp_message: string; items: OrderItem[]; created_at: string;
+  /** Nivel de precios del pedido; distinto de 'final' solo con una cuenta comercial aprobada (la base lo impone, 0006). */
+  price_tier?: PriceTier; trade_account_id?: string | null;
 };
+
+/** Cuenta comercial (instalador o distribuidor). La lógica de estados está en src/lib/services/trade.ts. */
+export type TradeAccount = {
+  id: string; company: string; ruc: string; tier: 'instalador' | 'distribuidor'; contact_name: string; email: string;
+  phone: string | null; city: string | null; notes: string | null;
+  status: 'pendiente' | 'aprobada' | 'rechazada' | 'suspendida'; review_note: string | null; reviewed_at: string | null;
+  approved_by: string | null; lead_id: string | null; created_at: string; updated_at: string;
+  /** El contacto ya fijó su contraseña con el enlace de acceso. */
+  activated: boolean;
+};
+export type TradeApplicationInput = Pick<TradeAccount, 'company' | 'ruc' | 'tier' | 'contact_name' | 'email' | 'phone' | 'city' | 'notes'>;
+export type TradeReview = { status: 'aprobada' | 'rechazada' | 'suspendida'; tier: 'instalador' | 'distribuidor'; review_note: string };
 
 export type Stat = { id: string; label: string; value: number; unit: string | null; source_note: string; verified: boolean; sort: number };
 export type Project = {

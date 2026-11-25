@@ -1,8 +1,8 @@
 import 'server-only';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { createHmac, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
-import { promisify } from 'node:util';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { hashPassword, verifyPassword } from './passwords';
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import type { AppRole, Staff } from './data/types';
@@ -30,12 +30,14 @@ export const PERMS = {
   users_read: ['superadmin', 'gerencia'],   // RLS: profiles self_read
   users: ['superadmin'],   // RLS: profiles admin_write
   identity: ['superadmin', 'marketing'],   // RLS: site_settings
-  bills: ['superadmin', 'gerencia', 'ingenieria', 'ventas'],   // RLS: bill_uploads y lectura del bucket bills (0002)
+  bills: ['superadmin', 'gerencia', 'ingenieria', 'ventas'],
+  trade: ['superadmin', 'gerencia', 'ventas'],   // RLS: trade_accounts (0002)
+  trade_approve: ['superadmin', 'gerencia'],   // la base lo impone con el disparador guard_trade_account (0006)   // RLS: bill_uploads y lectura del bucket bills (0002)
 } satisfies Record<string, AppRole[]>;
 export type Perm = keyof typeof PERMS;
 export const can = (s: Staff | null, p: Perm) => !!s && (PERMS[p] as AppRole[]).includes(s.role);
 
-const supabaseConfigured = () => !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && process.env.SUPABASE_SERVICE_ROLE_KEY);
+export const supabaseConfigured = () => !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 export async function supabaseAuthClient() {
   const jar = await cookies();
@@ -46,7 +48,7 @@ export async function supabaseAuthClient() {
 
 // ---- Sesión de desarrollo (solo sin Supabase y fuera de producción) ----
 const DEV_COOKIE = 'ese_dev_admin';
-const devSig = (v: string) => createHmac('sha256', process.env.APP_SECRET ?? 'dev-only-secret').update(v).digest('base64url');
+export const devSig = (v: string) => createHmac('sha256', process.env.APP_SECRET ?? 'dev-only-secret').update(v).digest('base64url');
 export const devAuthEnabled = () => !supabaseConfigured() && process.env.NODE_ENV !== 'production' && !!process.env.DEV_ADMIN_PASSWORD;
 
 export async function getStaff(): Promise<Staff | null> {
@@ -80,19 +82,6 @@ async function setDevSession(payloadText: string) {
   (await cookies()).set(DEV_COOKIE, `${payload}.${devSig(payload)}`, { httpOnly: true, sameSite: 'lax', secure: false, path: '/', maxAge: 60 * 60 * 8 });
 }
 
-// ---- Contraseñas de usuarios de desarrollo (scrypt). En Supabase las gestiona Auth.
-const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
-async function hashPassword(pw: string) {
-  const salt = randomBytes(16);
-  const hash = await scrypt(pw, salt, 64);
-  return ['scrypt', salt.toString('base64'), hash.toString('base64')].join(':');
-}
-async function verifyPassword(pw: string, stored: string) {
-  const [alg, salt, hash] = stored.split(':');
-  if (alg !== 'scrypt' || !salt || !hash) return false;
-  const a = await scrypt(pw, Buffer.from(salt, 'base64'), 64), b = Buffer.from(hash, 'base64');
-  return a.length === b.length && timingSafeEqual(a, b);
-}
 
 export async function requireStaff(perm: Perm = 'dashboard'): Promise<Staff> {
   const s = await getStaff();

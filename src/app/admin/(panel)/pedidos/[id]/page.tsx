@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getStore } from '@/lib/data/store';
 import { requireStaff, can } from '@/lib/auth';
@@ -15,7 +16,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         <h1 className="text-2xl font-bold">Pedido {o.number}</h1>
         <p className="mt-1 text-sm text-muted">{new Date(o.created_at).toLocaleString('es-EC')}</p>
         <div className="card mt-6 grid gap-2 p-5 text-sm sm:grid-cols-2">
-          <p><span className="text-muted">Cliente:</span> {o.customer_name} ({o.customer_type})</p><p><span className="text-muted">Correo:</span> {o.email}</p>
+          <p><span className="text-muted">Cliente:</span> {o.customer_name} ({o.customer_type})</p>{o.price_tier && o.price_tier !== 'final' && <p><span className="text-muted">Precios:</span> {o.price_tier} · {o.trade_account_id ? <Link href={`/admin/cuentas/${o.trade_account_id}`} className="underline">cuenta comercial</Link> : 'sin cuenta'}</p>}<p><span className="text-muted">Correo:</span> {o.email}</p>
           <p><span className="text-muted">Teléfono:</span> {o.phone}</p><p><span className="text-muted">Ciudad:</span> {o.city}</p>
           <p className="sm:col-span-2"><span className="text-muted">Dirección:</span> {o.address}</p>
           <p><span className="text-muted">Instalación:</span> {o.needs_installation ? 'Sí' : 'No'}</p>

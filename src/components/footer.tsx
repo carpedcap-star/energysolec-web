@@ -18,7 +18,8 @@ export function Footer({ logoDark }: { logoDark: string }) {
         </div>
         <div>
           <p className="mb-4 text-sm font-semibold text-white">Empresa</p>
-          <ul className="space-y-2 text-sm">{['/proyectos', '/servicios', '/marcas', '/financiamiento', '/nosotros', '/blog'].map((h) => { const n = NAV.find((x) => x.href === h)!; return <li key={h}><Link className="hover:text-brand" href={h}>{n.label}</Link></li>; })}</ul>
+          <ul className="space-y-2 text-sm">{['/proyectos', '/servicios', '/marcas', '/financiamiento', '/nosotros', '/blog'].map((h) => { const n = NAV.find((x) => x.href === h)!; return <li key={h}><Link className="hover:text-brand" href={h}>{n.label}</Link></li>; })}
+            <li><Link className="hover:text-brand" href="/profesionales">Instaladores y distribuidores</Link></li></ul>
         </div>
         <div>
           <p className="mb-4 text-sm font-semibold text-white">Contacto</p>

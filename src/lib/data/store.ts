@@ -6,10 +6,11 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { CalcParams, DEFAULT_PARAMS } from '../engine/params';
 import { DEFAULT_TARIFFS } from '../engine/default-tariffs';
 import type { Tariff } from '../engine/tariff';
-import type { Activity, BlogPost, BlogPostInput, BlogPostRecord, Brand, BrandAssetKind, BrandInput, BrandRecord, Consent, ContentBlockRow, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, ServiceInput, ServiceRow, StaffUser, StaffUserInput, Stat, Study, TierPrice, MediaBucket, BillUpload } from './types';
+import type { Activity, BlogPost, BlogPostInput, BlogPostRecord, Brand, BrandAssetKind, BrandInput, BrandRecord, Consent, ContentBlockRow, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, ServiceInput, ServiceRow, StaffUser, StaffUserInput, Stat, Study, TierPrice, MediaBucket, BillUpload, PriceTier, TradeAccount, TradeApplicationInput, TradeReview } from './types';
 import { PAID_STATES } from './types';
 import { SEED_BRANDS, SEED_PRODUCTS, SEED_PROJECTS, SEED_STATS } from './seed';
 import { effectivePrice } from '../services/catalog';
+import { productPricing } from '../services/trade';
 import { toPublicProject } from '../services/projects';
 import { toPublicBrand } from '../services/brands';
 import { isLive, toPublicPost } from '../services/blog';
@@ -53,9 +54,10 @@ export interface Store {
   addActivity(leadId: string, kind: string, body: string, actor: string | null): Promise<void>;
   listActivities(leadId: string): Promise<Activity[]>;
   hasMarketingConsent(email: string): Promise<boolean>;
-  listProducts(opts?: { includeUnpublished?: boolean }): Promise<Product[]>;
-  getProductsByIds(ids: string[]): Promise<Product[]>;
-  getProductBySlug(slug: string): Promise<Product | null>;
+  /** `tier`: precios de ese nivel (cuenta comercial aprobada); por defecto, cliente final. */
+  listProducts(opts?: { includeUnpublished?: boolean; tier?: PriceTier }): Promise<Product[]>;
+  getProductsByIds(ids: string[], tier?: PriceTier): Promise<Product[]>;
+  getProductBySlug(slug: string, tier?: PriceTier): Promise<Product | null>;
   // ---- Panel: catálogo (incluye borradores y todos los niveles de precio)
   listProductRecords(): Promise<ProductRecord[]>;
   getProductRecord(id: string): Promise<ProductRecord | null>;
@@ -70,6 +72,21 @@ export interface Store {
   createOrder(o: Omit<Order, 'id' | 'number' | 'created_at' | 'status' | 'payment_reference' | 'payment_verified_by' | 'payment_verified_at' | 'whatsapp_message'>): Promise<Order>;
   setOrderWhatsapp(id: string, msg: string, channel: 'cloud_api' | 'wa_link'): Promise<void>;
   listOrders(): Promise<Order[]>;
+  // ---- Cuentas comerciales (instaladores y distribuidores)
+  /** Registra la solicitud (pendiente). Lanza Error legible si ya hay una solicitud viva con ese correo o RUC. */
+  createTradeApplication(a: TradeApplicationInput, leadId: string | null): Promise<string>;
+  listTradeAccounts(): Promise<TradeAccount[]>;
+  getTradeAccount(id: string): Promise<TradeAccount | null>;
+  /** Cuenta APROBADA del usuario autenticado (Supabase Auth), o null. */
+  getApprovedTradeAccountForUser(userId: string): Promise<TradeAccount | null>;
+  /**
+   * Cambia el estado. Al aprobar por primera vez crea el usuario de acceso y devuelve su enlace (token); en los demás
+   * casos devuelve null. `actor` es quien aprueba (la base exige Gerencia o superadmin).
+   */
+  reviewTradeAccount(id: string, r: TradeReview, actor: string): Promise<{ token_hash: string; type: AccessLinkType } | null>;
+  /** Nuevo enlace de acceso (activar o restablecer contraseña) para una cuenta aprobada. */
+  createTradeAccessToken(id: string): Promise<{ token_hash: string; type: AccessLinkType }>;
+  listOrdersForTradeAccount(id: string): Promise<Order[]>;
   getOrder(id: string): Promise<Order | null>;
   updateOrderStatus(id: string, status: OrderStatus, actor: string, payment?: { reference: string }): Promise<void>;
   listStats(): Promise<Stat[]>;
@@ -146,7 +163,10 @@ type DevDb = {
   users: DevUser[];
   settings: Record<string, unknown>;
   bills: (BillUpload & { path: string; mime: string })[];
+  trade: DevTrade[];
 };
+/** Cuenta comercial en el archivo local: contraseña scrypt y token de acceso guardado solo como hash. */
+type DevTrade = Omit<TradeAccount, 'activated'> & { approved_by: string | null; password_hash?: string; token_hash?: string; token_expires?: number };
 /** Usuario de desarrollo: contraseña con scrypt y token de acceso guardado solo como hash SHA-256. */
 type DevUser = Omit<StaffUser, 'activated'> & { password_hash?: string; token_hash?: string; token_expires?: number };
 type DevPost = Omit<BlogPostRecord, 'cover'> & { cover_id: string | null };
@@ -204,11 +224,28 @@ const devUserOut = (u: DevUser): StaffUser => {
   return { ...rest, activated: !!password_hash };
 };
 /** Emite un token de acceso de desarrollo (24 h). Solo su hash queda guardado. */
-function devIssueToken(u: DevUser) {
+function devIssueToken(u: { token_hash?: string; token_expires?: number }) {
   const token = randomBytes(32).toString('base64url');
   u.token_hash = sha256(token); u.token_expires = Date.now() + 24 * 3600e3;
   return token;
 }
+const devTradeOut = (t: DevTrade): TradeAccount => {
+  const { password_hash, token_hash: _t, token_expires: _e, ...rest } = t;
+  return { ...rest, activated: !!password_hash };
+};
+/** Autenticación de clientes comerciales en modo desarrollo. La usa solo src/lib/trade-auth.ts. */
+export const devTradeAuth = {
+  findById: (id: string) => tx((db) => { const t = db.trade.find((x) => x.id === id); return t ? { ...t } : null; }),
+  findByEmail: (email: string) => tx((db) => { const t = db.trade.find((x) => x.email === email.trim().toLowerCase() && x.status !== 'rechazada'); return t ? { ...t } : null; }),
+  consumeToken: (token: string) => tx((db) => {
+    const h = sha256(token);
+    const t = db.trade.find((x) => x.token_hash === h);
+    if (!t || !t.token_expires || t.token_expires < Date.now()) return null;
+    delete t.token_hash; delete t.token_expires;
+    return { ...t };
+  }),
+  setPasswordHash: (id: string, hash: string) => tx((db) => { const t = db.trade.find((x) => x.id === id); if (t) t.password_hash = hash; }),
+};
 /** Autenticación de usuarios en modo desarrollo (sin Supabase). La usa solo src/lib/auth.ts. */
 export const devUserAuth = {
   findById: (id: string) => tx((db) => db.users.find((u) => u.id === id) ?? null),
@@ -228,9 +265,9 @@ const devServiceRow = (db: DevDb, s: DevService): ServiceRow => {
   return { ...rest, cover: cover_id ? devMediaRef(db, cover_id) : null };
 };
 const devBrandName = (db: DevDb, p: DevProduct) => (p.brand_id !== undefined ? (p.brand_id ? db.brands.find((b) => b.id === p.brand_id)?.name ?? null : null) : p.brand);
-function devPublic(db: DevDb, p: DevProduct): Product {
+function devPublic(db: DevDb, p: DevProduct, tier: PriceTier = 'final'): Product {
   const { brand_id: _b, prices: _p, image_ids, datasheet_id, updated_at: _u, ...base } = p;
-  const eff = effectivePrice(devPrices(p)) ?? { price: 0, promo_price: null };
+  const eff = tier === 'final' ? effectivePrice(devPrices(p)) ?? { price: 0, promo_price: null } : productPricing(devPrices(p), tier);
   return {
     ...base, ...eff, brand: devBrandName(db, p),
     images: image_ids ? image_ids.map((id) => devMediaRef(db, id)?.url).filter((u): u is string => !!u) : p.images,
@@ -265,12 +302,12 @@ async function devLoad(): Promise<DevDb> {
   // Solo se crea una base nueva si el archivo no existe: un JSON dañado se reporta, nunca se sobrescribe con la semilla.
   if (raw != null) {
     const db = JSON.parse(raw) as DevDb;
-    db.media ??= []; db.content_blocks ??= []; db.services ??= []; db.posts ??= []; db.users ??= []; db.settings ??= {}; db.bills ??= [];
+    db.media ??= []; db.content_blocks ??= []; db.services ??= []; db.posts ??= []; db.users ??= []; db.settings ??= {}; db.bills ??= []; db.trade ??= [];
     devState.cache = db;
   }
   else {
     devState.cache = { params: [{ ...DEFAULT_PARAMS, version: 1 }], tariffs: DEFAULT_TARIFFS.map((t) => ({ ...t, id: randomUUID() })), studies: [], leads: [], activities: [], consents: [],
-      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [], posts: [], users: [], settings: {}, bills: [] };
+      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [], posts: [], users: [], settings: {}, bills: [], trade: [] };
     await devSave();
   }
   return devState.cache!;
@@ -362,9 +399,9 @@ const devStore: Store = {
     const last = db.consents.filter((c) => c.email === email && c.purpose === 'comercial_marketing').at(-1);
     return !!last?.granted;
   }),
-  listProducts: (o) => tx((db) => db.products.filter((p) => o?.includeUnpublished || p.published).map((p) => devPublic(db, p))),
-  getProductsByIds: (ids) => tx((db) => db.products.filter((p) => ids.includes(p.id) && p.published).map((p) => devPublic(db, p))),
-  getProductBySlug: (slug) => tx((db) => { const p = db.products.find((x) => x.slug === slug && x.published); return p ? devPublic(db, p) : null; }),
+  listProducts: (o) => tx((db) => db.products.filter((p) => o?.includeUnpublished || p.published).map((p) => devPublic(db, p, o?.tier))),
+  getProductsByIds: (ids, tier) => tx((db) => db.products.filter((p) => ids.includes(p.id) && p.published).map((p) => devPublic(db, p, tier))),
+  getProductBySlug: (slug, tier) => tx((db) => { const p = db.products.find((x) => x.slug === slug && x.published); return p ? devPublic(db, p, tier) : null; }),
   listProductRecords: () => tx((db) => db.products.map((p) => devRecord(db, p)).sort((a, b) => a.name.localeCompare(b.name, 'es'))),
   getProductRecord: (id) => tx((db) => { const p = db.products.find((x) => x.id === id); return p ? devRecord(db, p) : null; }),
   saveProduct: (input) => tx((db) => {
@@ -416,6 +453,32 @@ const devStore: Store = {
   }),
   setOrderWhatsapp: (id, msg) => tx((db) => { const o = db.orders.find((x) => x.id === id); if (o) o.whatsapp_message = msg; }),
   listOrders: () => tx((db) => [...db.orders].sort((a, b) => b.created_at.localeCompare(a.created_at))),
+  createTradeApplication: (a, leadId) => tx((db) => {
+    const live = db.trade.filter((t) => t.status !== 'rechazada');
+    if (live.some((t) => t.email === a.email)) throw new Error('Ya existe una solicitud o cuenta con ese correo. Si olvidaste tu contraseña, recupérala desde «Ingresar».');
+    if (live.some((t) => t.ruc === a.ruc)) throw new Error('Ya existe una solicitud o cuenta con ese RUC. Escríbenos si necesitas agregar otra persona de contacto.');
+    const now = new Date().toISOString();
+    const t: DevTrade = { ...a, id: randomUUID(), status: 'pendiente', review_note: null, reviewed_at: null, approved_by: null, lead_id: leadId, created_at: now, updated_at: now };
+    db.trade.push(t);
+    return t.id;
+  }),
+  listTradeAccounts: () => tx((db) => [...db.trade].sort((a, b) => b.created_at.localeCompare(a.created_at)).map(devTradeOut)),
+  getTradeAccount: (id) => tx((db) => { const t = db.trade.find((x) => x.id === id); return t ? devTradeOut(t) : null; }),
+  getApprovedTradeAccountForUser: (id) => tx((db) => { const t = db.trade.find((x) => x.id === id && x.status === 'aprobada'); return t ? devTradeOut(t) : null; }),
+  reviewTradeAccount: (id, r, actor) => tx((db) => {
+    const t = db.trade.find((x) => x.id === id);
+    if (!t) throw new Error('Cuenta no encontrada.');
+    const firstApproval = r.status === 'aprobada' && !t.password_hash && !t.approved_by;
+    Object.assign(t, { status: r.status, tier: r.tier, review_note: r.review_note || null, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+    if (r.status === 'aprobada' || r.status === 'suspendida') t.approved_by = actor;
+    return firstApproval ? { token_hash: devIssueToken(t), type: 'invite' as AccessLinkType } : null;
+  }),
+  createTradeAccessToken: (id) => tx((db) => {
+    const t = db.trade.find((x) => x.id === id);
+    if (!t || t.status !== 'aprobada') throw new Error('La cuenta no está aprobada.');
+    return { token_hash: devIssueToken(t), type: (t.password_hash ? 'recovery' : 'invite') as AccessLinkType };
+  }),
+  listOrdersForTradeAccount: (id) => tx((db) => db.orders.filter((o) => o.trade_account_id === id).sort((a, b) => b.created_at.localeCompare(a.created_at))),
   getOrder: (id) => tx((db) => db.orders.find((o) => o.id === id) ?? null),
   updateOrderStatus: (id, status, actor, payment) => tx((db) => {
     const o = db.orders.find((x) => x.id === id); if (!o) throw new Error('Pedido no encontrado');
@@ -546,6 +609,14 @@ function must<T>(r: { data: T | null; error: { message: string } | null }): T {
 const PUBLIC_BUCKET = 'public-media';
 const PRIVATE_BUCKET = 'private-docs';
 const BILLS_BUCKET = 'bills';
+const TRADE_COLS = 'id, company, ruc, tier, contact_name, email, phone, city, notes, status, review_note, reviewed_at, approved_by, user_id, lead_id, created_at, updated_at';
+/** Mapea filas de trade_accounts; «activated» = el usuario de Auth confirmó su correo (fijó contraseña con el enlace). */
+async function mapTrade(rows: any[]): Promise<TradeAccount[]> {
+  const ids = rows.map((r) => r.user_id).filter(Boolean) as string[];
+  const confirmed = new Set<string>();
+  for (const uid of ids) { const u = await sb().auth.admin.getUserById(uid); if (u.data.user?.email_confirmed_at) confirmed.add(uid); }
+  return rows.map(({ user_id, ...r }) => ({ ...r, activated: !!user_id && confirmed.has(user_id) }));
+}
 const BILL_COLS = 'id, study_id, lead_id, extracted, confirmed_by_user, created_at';
 const publicUrl = (p: string) => sb().storage.from(PUBLIC_BUCKET).getPublicUrl(p).data.publicUrl;
 async function mediaMap(ids: string[]): Promise<Map<string, MediaRef>> {
@@ -558,13 +629,13 @@ const mediaIdsOf = (rows: any[]) => rows.flatMap((p) => [...((p.images ?? []) as
 const tierPrices = (p: any): TierPrice[] => ((p.product_prices ?? []) as any[]).map((x) => ({
   tier: x.tier, price: Number(x.price), promo_price: x.promo_price == null ? null : Number(x.promo_price), promo_until: x.promo_until ?? null,
 }));
-const mapProduct = (p: any, media: Map<string, MediaRef>): Product => ({
+const mapProduct = (p: any, media: Map<string, MediaRef>, tier: PriceTier = 'final'): Product => ({
   id: p.id, sku: p.sku, slug: p.slug, name: p.name, brand: p.brands?.name ?? null, model: p.model, category: p.product_categories?.slug ?? '',
   summary: p.summary, specs: p.specs ?? {}, warranty: p.warranty, certifications: p.certifications ?? [],
   images: ((p.images ?? []) as string[]).map((id) => media.get(id)?.url).filter((u): u is string => !!u),
   datasheet_url: p.datasheet ? media.get(p.datasheet)?.url ?? null : null, vat_rate: Number(p.vat_rate), stock: p.stock,
   availability: p.availability, installable: p.installable,
-  ...(effectivePrice(tierPrices(p)) ?? { price: 0, promo_price: null }),
+  ...(tier === 'final' ? effectivePrice(tierPrices(p)) ?? { price: 0, promo_price: null } : productPricing(tierPrices(p), tier)),
   is_placeholder: p.is_placeholder, published: p.published,
 });
 const mapRecord = (p: any, media: Map<string, MediaRef>): ProductRecord => ({
@@ -575,7 +646,7 @@ const mapRecord = (p: any, media: Map<string, MediaRef>): ProductRecord => ({
   images: ((p.images ?? []) as string[]).map((id) => media.get(id)).filter((m): m is MediaRef => !!m),
   datasheet: p.datasheet ? media.get(p.datasheet) ?? null : null,
 });
-async function mapProducts(rows: any[]) { const m = await mediaMap(mediaIdsOf(rows)); return rows.map((r) => mapProduct(r, m)); }
+async function mapProducts(rows: any[], tier?: PriceTier) { const m = await mediaMap(mediaIdsOf(rows)); return rows.map((r) => mapProduct(r, m, tier)); }
 const POST_SELECT = 'id, slug, title, excerpt, body_md, category, cover, author_id, published, published_at, seo_title, seo_description, profiles(full_name)';
 async function mapPostRecords(rows: any[]): Promise<BlogPostRecord[]> {
   const media = await mediaMap(rows.map((r) => r.cover).filter(Boolean));
@@ -743,13 +814,13 @@ const supabaseStore: Store = {
   async listProducts(o) {
     let q = sb().from('products').select(PRODUCT_SELECT).order('name');
     if (!o?.includeUnpublished) q = q.eq('published', true);
-    return mapProducts(must(await q) as any[]);
+    return mapProducts(must(await q) as any[], o?.tier);
   },
-  async getProductsByIds(ids) {
+  async getProductsByIds(ids, tier) {
     const valid = ids.filter(isUuid);
-    return valid.length ? mapProducts(must(await sb().from('products').select(PRODUCT_SELECT).in('id', valid).eq('published', true)) as any[]) : [];
+    return valid.length ? mapProducts(must(await sb().from('products').select(PRODUCT_SELECT).in('id', valid).eq('published', true)) as any[], tier) : [];
   },
-  async getProductBySlug(slug) { const r = must(await sb().from('products').select(PRODUCT_SELECT).eq('slug', slug).eq('published', true).maybeSingle()); return r ? (await mapProducts([r]))[0] : null; },
+  async getProductBySlug(slug, tier) { const r = must(await sb().from('products').select(PRODUCT_SELECT).eq('slug', slug).eq('published', true).maybeSingle()); return r ? (await mapProducts([r], tier))[0] : null; },
   async listProductRecords() {
     const rows = must(await sb().from('products').select(PRODUCT_SELECT).order('name')) as any[];
     const m = await mediaMap(mediaIdsOf(rows));
@@ -809,6 +880,63 @@ const supabaseStore: Store = {
   },
   async setOrderWhatsapp(id, msg, channel) { must(await sb().from('orders').update({ whatsapp_message: msg, whatsapp_channel: channel }).eq('id', id)); },
   async listOrders() { return (must(await sb().from('orders').select('*, items:order_items(*)').order('created_at', { ascending: false }).limit(500))) as Order[]; },
+  async createTradeApplication(a, leadId) {
+    const r = await sb().from('trade_accounts').insert({ ...a, lead_id: leadId, status: 'pendiente', approved: false }).select('id').single();
+    if (r.error) {
+      if (r.error.code === '23505') throw new Error(r.error.message.includes('ruc')
+        ? 'Ya existe una solicitud o cuenta con ese RUC. Escríbenos si necesitas agregar otra persona de contacto.'
+        : 'Ya existe una solicitud o cuenta con ese correo. Si olvidaste tu contraseña, recupérala desde «Ingresar».');
+      throw new Error(r.error.message);
+    }
+    return (r.data as { id: string }).id;
+  },
+  async listTradeAccounts() { return mapTrade(must(await sb().from('trade_accounts').select(TRADE_COLS).order('created_at', { ascending: false })) as any[]); },
+  async getTradeAccount(id) {
+    if (!isUuid(id)) return null;
+    const r = must(await sb().from('trade_accounts').select(TRADE_COLS).eq('id', id).maybeSingle());
+    return r ? (await mapTrade([r]))[0] : null;
+  },
+  async getApprovedTradeAccountForUser(userId) {
+    const r = must(await sb().from('trade_accounts').select(TRADE_COLS).eq('user_id', userId).eq('status', 'aprobada').maybeSingle());
+    return r ? (await mapTrade([r]))[0] : null;
+  },
+  async reviewTradeAccount(id, rv, actor) {
+    const c = sb();
+    const cur = must(await c.from('trade_accounts').select('user_id, email').eq('id', id).maybeSingle()) as { user_id: string | null; email: string } | null;
+    if (!cur) throw new Error('Cuenta no encontrada.');
+    const patch: Record<string, unknown> = {
+      status: rv.status, approved: rv.status === 'aprobada', tier: rv.tier, review_note: rv.review_note || null, reviewed_at: new Date().toISOString(),
+    };
+    if (rv.status === 'aprobada' || rv.status === 'suspendida') patch.approved_by = actor;
+    let link: { token_hash: string; type: AccessLinkType } | null = null;
+    let createdUser: string | null = null;
+    if (rv.status === 'aprobada' && !cur.user_id) {
+      // generateLink crea el usuario de Auth sin enviar correo; si ya existía (p. ej. solicitud anterior), se usa «recovery».
+      let g = await c.auth.admin.generateLink({ type: 'invite', email: cur.email });
+      if (g.error && /already|registered|exists/i.test(g.error.message)) g = await c.auth.admin.generateLink({ type: 'recovery', email: cur.email });
+      else if (!g.error) createdUser = g.data.user?.id ?? null;
+      if (g.error || !g.data.user) throw new Error(`No se pudo crear el acceso: ${g.error?.message ?? 'sin usuario'}`);
+      patch.user_id = g.data.user.id;
+      link = { token_hash: g.data.properties.hashed_token, type: createdUser ? 'invite' : 'recovery' };
+    }
+    const r = await c.from('trade_accounts').update(patch).eq('id', id);
+    if (r.error) {
+      if (createdUser) await c.auth.admin.deleteUser(createdUser); // no dejar un usuario de Auth huérfano
+      throw new Error(r.error.message);
+    }
+    return link;
+  },
+  async createTradeAccessToken(id) {
+    const c = sb();
+    const t = must(await c.from('trade_accounts').select('email, status').eq('id', id).maybeSingle()) as { email: string; status: string } | null;
+    if (!t || t.status !== 'aprobada') throw new Error('La cuenta no está aprobada.');
+    const { data, error } = await c.auth.admin.generateLink({ type: 'recovery', email: t.email });
+    if (error) throw new Error(`No se pudo generar el enlace: ${error.message}`);
+    return { token_hash: data.properties.hashed_token, type: 'recovery' as const };
+  },
+  async listOrdersForTradeAccount(id) {
+    return must(await sb().from('orders').select('*, items:order_items(*)').eq('trade_account_id', id).order('created_at', { ascending: false }).limit(100)) as Order[];
+  },
   async getOrder(id) { return must(await sb().from('orders').select('*, items:order_items(*)').eq('id', id).maybeSingle()) as Order | null; },
   async updateOrderStatus(id, status, actor, payment) {
     const patch: Record<string, unknown> = { status };

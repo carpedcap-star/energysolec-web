@@ -15,6 +15,8 @@ Acceso: `https://www.energysolec.com/admin/login` con el usuario que te asigne e
 | Indicadores de inicio | ✓ | ✓ | | | | |
 | Exportar CSV | ✓ | ✓ | ✓ | | | |
 | Planillas de clientes | ✓ | ✓ | | sus leads y sin asignar | ✓ | |
+| Cuentas comerciales (ver, rechazar) | ✓ | ✓ | | ✓ | | |
+| Cuentas comerciales (aprobar, suspender) | ✓ | ✓ | | | | |
 
 ## CRM
 
@@ -138,6 +140,16 @@ Acceso: `https://www.energysolec.com/admin/login` con el usuario que te asigne e
 - La subida exige una autorización separada (LOPDP): el archivo se guarda en el almacenamiento privado `bills` y lo procesa un proveedor externo de IA.
 - En la ficha del lead, la sección **Planilla eléctrica** compara lo leído por la IA con lo confirmado y permite abrir el archivo original. Es un documento con datos personales: no lo reenvíes.
 - La opción aparece solo si el servidor tiene `ANTHROPIC_API_KEY`. Límites: 5 lecturas por hora por visitante y `BILL_DAILY_MAX` (200 por defecto) al día en todo el sitio. Si la lectura falla, el cliente sigue con el ingreso manual.
+
+## Cuentas comerciales (instaladores y distribuidores)
+
+- Las empresas solicitan su cuenta en **/profesionales** con razón social, RUC, ciudad y persona de contacto. Cada solicitud crea además un lead (fuente «cuenta comercial»).
+- En **Cuentas comerciales** revisa la solicitud. Verifica el RUC en el SRI antes de aprobar. Ventas puede rechazar (con motivo); **solo Gerencia aprueba o suspende**, y la base de datos lo impone.
+- Al aprobar eliges el nivel (instalador o distribuidor). El contacto recibe por correo un enlace de un solo uso (24 h) para elegir su contraseña; sin proveedor de correo, el panel muestra el enlace para compartirlo. «Enviar enlace» genera uno nuevo.
+- Con la sesión iniciada en **/cuenta**, el cliente ve en la tienda el precio de su nivel. Si un producto no tiene precio de ese nivel, o el de nivel no es menor al de cliente final, se cobra el de cliente final. Carga los precios por nivel en **Productos**.
+- Sus pedidos quedan con el nivel aplicado y vinculados a la cuenta (visible en el pedido y en la ficha de la cuenta). Quien elige «instalador» en el carrito sin cuenta aprobada paga precio final, y el mensaje de WhatsApp lo advierte.
+- **Suspender** corta el acceso a los precios al instante; se puede volver a aprobar. Una solicitud rechazada no se reabre: la empresa puede enviar otra.
+- Para cambiar el nivel de una cuenta aprobada: suspéndela y vuelve a aprobarla con el nuevo nivel.
 
 ## Otros datos
 

@@ -2,10 +2,14 @@ import type { Order } from '../data/types';
 import { fmtUsd2 } from '../format';
 
 /** Mensaje estructurado del pedido para WhatsApp. Función pura (probada en whatsapp.test.ts). */
-export function orderMessage(o: Pick<Order, 'number' | 'customer_name' | 'items' | 'subtotal' | 'tax' | 'total' | 'city' | 'needs_installation' | 'customer_type'>) {
+export function orderMessage(o: Pick<Order, 'number' | 'customer_name' | 'items' | 'subtotal' | 'tax' | 'total' | 'city' | 'needs_installation' | 'customer_type'> & { price_tier?: string; company?: string | null }) {
+  const trade = o.price_tier && o.price_tier !== 'final';
   const lines = [
     `*Pedido ${o.number}* — Energy Solutions Ecuador`,
     `Cliente: ${o.customer_name} (${o.customer_type})`,
+    ...(trade ? [`Cuenta comercial: ${o.company ?? '—'} · precios de ${o.price_tier}`] : []),
+    // Quien se declara instalador o distribuidor sin cuenta aprobada paga precio de cliente final.
+    ...(!trade && (o.customer_type === 'instalador' || o.customer_type === 'distribuidor') ? ['Sin cuenta comercial aprobada: precios de cliente final.'] : []),
     '',
     '*Productos:*',
     ...o.items.map((i) => i.unit_price > 0
