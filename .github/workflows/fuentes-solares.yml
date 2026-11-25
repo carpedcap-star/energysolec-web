@@ -1,0 +1,24 @@
+name: Fuentes de recurso solar (en vivo)
+
+# Comprueba cada semana que PVGIS y NASA POWER siguen respondiendo con el formato que espera el motor.
+# Depende de servicios externos: por eso no bloquea los cambios (no corre en push ni en pull request).
+on:
+  schedule:
+    - cron: '17 11 * * 1'   # lunes 06:17 en Ecuador
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuentes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:live

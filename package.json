@@ -8,6 +8,7 @@
     "start": "next start",
     "test": "vitest run",
     "test:live": "LIVE_SOURCES=1 NODE_USE_ENV_PROXY=1 vitest run src/lib/engine/resource.live.test.ts",
+    "e2e": "playwright test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

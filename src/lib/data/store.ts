@@ -334,7 +334,8 @@ function devRecord(db: DevDb, p: DevProduct): ProductRecord {
     datasheet: datasheet_id ? devMediaRef(db, datasheet_id) : null,
   };
 }
-const DEV_FILE = path.join(process.cwd(), '.data', 'dev-db.json');
+/** Las pruebas de extremo a extremo usan su propia copia (DEV_DB_FILE) para no tocar el archivo versionado. */
+const DEV_FILE = process.env.DEV_DB_FILE ? path.resolve(process.env.DEV_DB_FILE) : path.join(process.cwd(), '.data', 'dev-db.json');
 /**
  * Estado del almacén de desarrollo COMPARTIDO por todo el proceso. En `next dev` cada ruta se compila por separado y
  * este módulo se instancia varias veces; con variables de módulo, cada instancia tenía su propia copia de la base y al
