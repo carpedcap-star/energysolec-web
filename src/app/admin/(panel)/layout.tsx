@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export const metadata = { robots: { index: false } };
 const NAV: [string, string, Perm][] = [
   ['/admin', 'Dashboard', 'dashboard'], ['/admin/leads', 'CRM · Leads', 'leads'], ['/admin/pedidos', 'Pedidos', 'orders'], ['/admin/cuentas', 'Cuentas comerciales', 'trade'], ['/admin/productos', 'Productos', 'products'], ['/admin/proyectos', 'Proyectos', 'projects'], ['/admin/contenido', 'Contenido del sitio', 'content'], ['/admin/marcas', 'Marcas', 'brands'], ['/admin/servicios', 'Servicios', 'services'], ['/admin/blog', 'Blog', 'blog'], ['/admin/usuarios', 'Usuarios', 'users_read'], ['/admin/identidad', 'Identidad gráfica', 'identity'],
-  ['/admin/parametros', 'Parámetros de cálculo', 'params'], ['/admin/tarifas', 'Tarifas eléctricas', 'tariffs'], ['/admin/indicadores', 'Indicadores de inicio', 'stats'], ['/admin/mensajes', 'Mensajes y tareas', 'messages'],
+  ['/admin/parametros', 'Parámetros de cálculo', 'params'], ['/admin/tarifas', 'Tarifas eléctricas', 'tariffs'], ['/admin/recurso-solar', 'Recurso solar', 'params'], ['/admin/indicadores', 'Indicadores de inicio', 'stats'], ['/admin/mensajes', 'Mensajes y tareas', 'messages'],
 ];
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const staff = await requireStaff();

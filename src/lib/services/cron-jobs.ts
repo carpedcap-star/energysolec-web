@@ -2,6 +2,7 @@ import 'server-only';
 import { getStore } from '../data/store';
 import type { OutboundMessage } from '../data/types';
 import { renderStudyPdf } from '../pdf/report';
+import { CACHE_TTL_DAYS, checkSources, REFERENCE_POINTS } from '../engine/resource';
 import { SITE } from '../site';
 import { afterFailure, billPurgeBefore, buildDigests, digestEmail, isExpired } from './followup';
 import { deliverEmail, emailProviderConfigured, sendEmail } from './messaging';
@@ -10,7 +11,7 @@ import { deliverEmail, emailProviderConfigured, sendEmail } from './messaging';
  * Tareas programadas. Las ejecuta /api/cron (Vercel Cron u otro programador) y el botón del panel (/admin/mensajes).
  * Cada tarea es independiente: si una falla, las demás corren igual. El resumen solo lleva conteos.
  */
-export const JOBS = ['mensajes', 'recordatorios', 'depuracion'] as const;
+export const JOBS = ['mensajes', 'recordatorios', 'depuracion', 'fuentes'] as const;
 export type Job = (typeof JOBS)[number];
 type Summary = Record<string, number | string>;
 
@@ -80,11 +81,20 @@ async function sendReminders(): Promise<Summary> {
 
 async function purge(): Promise<Summary> {
   const store = getStore();
-  const [planillas, limites] = await Promise.all([store.purgeBillUploads(billPurgeBefore(Date.now())), store.pruneRateLimits()]);
-  return { planillas_borradas: planillas, limites_limpiados: limites };
+  // Caché solar: más allá del doble de su vigencia ya no sirve ni como respaldo.
+  const solarBefore = new Date(Date.now() - 2 * CACHE_TTL_DAYS * 86_400e3).toISOString();
+  const [planillas, limites, solar] = await Promise.all([store.purgeBillUploads(billPurgeBefore(Date.now())), store.pruneRateLimits(), store.clearSolarCache(solarBefore)]);
+  return { planillas_borradas: planillas, limites_limpiados: limites, cache_solar_borrada: solar };
 }
 
-const RUN: Record<Job, () => Promise<Summary>> = { mensajes: retryMessages, recordatorios: sendReminders, depuracion: purge };
+/** Verificación diaria en vivo de PVGIS-NSRDB, PVGIS-ERA5 y NASA POWER en Guayaquil (3 consultas, sin caché). */
+async function verifySources(): Promise<Summary> {
+  const r = await checkSources(fetch, [REFERENCE_POINTS[0]]);
+  const bad = r.filter((x) => !x.ok);
+  return { fuentes_ok: r.length - bad.length, fuentes_con_falla: bad.length, ...(bad.length ? { detalle: bad.map((x) => `${x.source}: ${x.error}`).join(' | ').slice(0, 300) } : {}) };
+}
+
+const RUN: Record<Job, () => Promise<Summary>> = { mensajes: retryMessages, recordatorios: sendReminders, depuracion: purge, fuentes: verifySources };
 
 export async function runJobs(trigger: 'cron' | 'panel', actor: string | null, jobs: readonly Job[] = JOBS) {
   const store = getStore();

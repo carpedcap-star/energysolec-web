@@ -33,7 +33,7 @@
 - Flujo industrial con carga de documentos (curva de carga, planos).
 - ✅ Cuentas de instaladores y distribuidores: solicitud con RUC, aprobación por Gerencia, acceso propio y precios de su nivel en tienda, carrito y pedidos (migración `0006`).
 - ✅ Recordatorios automáticos de seguimiento (resumen diario por asesor, leads sin contactar, aviso de asignación), reintento de la cola de correos y depuración de planillas (tarea programada, migración `0007`).
-- Caché del recurso solar por celda (tabla creada) y prueba en vivo de PVGIS y NASA POWER desde producción.
+- ✅ Caché del recurso solar por celda y fuente, validación de respuestas y verificación en vivo de PVGIS-NSRDB, PVGIS-ERA5 y NASA POWER (panel, tarea diaria y `npm run test:live`; migración `0008`).
 - Pruebas automatizadas de extremo a extremo (Playwright) en CI.
 
 ## Fase 3 — Escala (estimado: 3–4 semanas)

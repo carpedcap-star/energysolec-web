@@ -1,0 +1,46 @@
+{
+ "_fuente": "Respuesta real de NASA POWER (climatología), 25/11/2026: lat -2.19, lon -79.88. Extracto.",
+ "header": {
+  "title": "NASA/POWER Source Native Resolution Climatology Climatologies",
+  "fill_value": -999.0,
+  "range": "25-year Meteorological and Solar Monthly & Annual Climatologies (January 2001 - December 2025)",
+  "sources": [
+   "MERRA2",
+   "SYN1DEG"
+  ]
+ },
+ "properties": {
+  "parameter": {
+   "ALLSKY_SFC_SW_DWN": {
+    "JAN": 3.8258,
+    "FEB": 3.8124,
+    "MAR": 4.0214,
+    "APR": 4.1059,
+    "MAY": 3.7145,
+    "JUN": 3.4382,
+    "JUL": 3.4642,
+    "AUG": 3.7598,
+    "SEP": 4.0066,
+    "OCT": 3.9106,
+    "NOV": 4.0486,
+    "DEC": 3.9588,
+    "ANN": 3.8386
+   },
+   "T2M": {
+    "JAN": 27.51,
+    "FEB": 26.77,
+    "MAR": 26.47,
+    "APR": 26.88,
+    "MAY": 27.16,
+    "JUN": 27.4,
+    "JUL": 27.62,
+    "AUG": 27.61,
+    "SEP": 27.59,
+    "OCT": 27.21,
+    "NOV": 27.24,
+    "DEC": 27.87,
+    "ANN": 27.28
+   }
+  }
+ }
+}

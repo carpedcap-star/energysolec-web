@@ -1,0 +1,89 @@
+{
+ "_fuente": "Respuesta real de la API PVGIS (JRC), 25/11/2026: lat -2.19, lon -79.88, 1 kWp, loss=0, 10°, aspect 180. Extracto.",
+ "inputs": {
+  "location": {
+   "latitude": -2.19,
+   "longitude": -79.88,
+   "elevation": 28.0
+  },
+  "meteo_data": {
+   "radiation_db": "PVGIS-NSRDB",
+   "meteo_db": "ERA5",
+   "year_min": 2005,
+   "year_max": 2015,
+   "use_horizon": true,
+   "horizon_db": "DEM-calculated"
+  }
+ },
+ "outputs": {
+  "monthly": {
+   "fixed": [
+    {
+     "month": 1,
+     "E_m": 102.79,
+     "H(i)_m": 119.88
+    },
+    {
+     "month": 2,
+     "E_m": 100.35,
+     "H(i)_m": 117.0
+    },
+    {
+     "month": 3,
+     "E_m": 128.52,
+     "H(i)_m": 149.98
+    },
+    {
+     "month": 4,
+     "E_m": 128.4,
+     "H(i)_m": 149.49
+    },
+    {
+     "month": 5,
+     "E_m": 124.9,
+     "H(i)_m": 144.69
+    },
+    {
+     "month": 6,
+     "E_m": 111.1,
+     "H(i)_m": 128.18
+    },
+    {
+     "month": 7,
+     "E_m": 116.01,
+     "H(i)_m": 134.2
+    },
+    {
+     "month": 8,
+     "E_m": 123.52,
+     "H(i)_m": 143.02
+    },
+    {
+     "month": 9,
+     "E_m": 129.31,
+     "H(i)_m": 149.7
+    },
+    {
+     "month": 10,
+     "E_m": 125.26,
+     "H(i)_m": 144.96
+    },
+    {
+     "month": 11,
+     "E_m": 119.64,
+     "H(i)_m": 138.76
+    },
+    {
+     "month": 12,
+     "E_m": 121.48,
+     "H(i)_m": 141.59
+    }
+   ]
+  },
+  "totals": {
+   "fixed": {
+    "E_y": 1431.29
+   }
+  }
+ }
+}

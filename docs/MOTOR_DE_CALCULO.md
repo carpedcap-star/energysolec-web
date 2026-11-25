@@ -1,6 +1,6 @@
 # Motor de cálculo solar y financiero
 
-Código: `src/lib/engine/`. Pruebas: `engine.test.ts` (20 casos). Todos los parámetros se editan en **/admin/parametros** y se versionan; cada estudio guarda la versión usada.
+Código: `src/lib/engine/`. Pruebas: `engine.test.ts` (con respuestas reales de las fuentes en `fixtures/`) y `resource.live.test.ts` (en vivo: `npm run test:live`). Todos los parámetros se editan en **/admin/parametros** y se versionan; cada estudio guarda la versión usada.
 
 ## 1. Recurso solar
 
@@ -9,9 +9,20 @@ Código: `src/lib/engine/`. Pruebas: `engine.test.ts` (20 casos). Todos los par�
    - **PVGIS-NSRDB** (satelital, API 5.2), cobertura América 60°N–20°S.
    - **PVGIS-ERA5** (reanálisis global ~30 km, API 5.3). SARAH no cubre Sudamérica.
    - **NASA POWER** climatología (GHI y temperatura). Conversión a rendimiento: irradiación en plano ≈ GHI para inclinaciones ≤15° cerca del ecuador; temperatura de celda ≈ T. ambiente + 25 °C; coeficiente −0,35 %/°C; −2 % por baja irradiancia y espectro.
-3. Se adopta el **menor** rendimiento anual (los reanálisis tienden a sobrestimar en el trópico nuboso). El reporte muestra todas las fuentes comparadas.
+3. Se adopta el **menor** rendimiento anual. Las fuentes difieren hasta un 30 % y ninguna es siempre la menor (ERA5 es la menor en Guayaquil y la mayor en Loja). Verificado en vivo el 25/11/2026, en kWh/kWp/año, inclinación 10°:
+
+   | Punto | PVGIS-NSRDB | PVGIS-ERA5 | NASA POWER |
+   |---|---|---|---|
+   | Guayaquil | 1.431 | **1.114** | 1.242 |
+   | Quito | 1.782 | 1.520 | **1.345** |
+   | Loja | 1.394 | 1.584 | **1.356** |
+
+   El reporte muestra todas las fuentes comparadas, con su período de datos (p. ej. NSRDB 2005–2015, ERA5 2005–2023, NASA 2001–2025).
+3b. **Validación**: se descartan respuestas con menos de 12 meses, de otra base de datos, con valores de relleno (NASA usa −999) o fuera de rango (30–300 kWh/kWp por mes). Un error de red se reintenta una vez (conexiones reutilizadas que el servidor cerró); un error HTTP no.
+3c. **Caché** (`solar_resource_cache`, migración 0008): una fila por celda de 0,05° (~5,5 km), inclinación entera y fuente, vigente 180 días (son climatologías). La consulta usa las coordenadas exactas: una celda redondeada en la costa puede caer en el mar (PVGIS responde 400, visto en Galápagos). Si una fuente falla y hay un dato guardado vencido, se usa ese dato con una nota: perder una fuente podría subir el mínimo y volver el estudio menos conservador. La caché se vacía desde **/admin/recurso-solar**; las filas con más del doble de vigencia se borran en la tarea diaria.
+3d. **Verificación en vivo**: la tarea diaria consulta las tres fuentes en Guayaquil y deja el resultado en el panel. **/admin/recurso-solar** verifica bajo demanda Guayaquil, Quito y Puerto Baquerizo Moreno.
 4. Orientación: `aspect=180` (norte) al sur del ecuador y `aspect=0` al norte. Inclinación por defecto 10°.
-5. Si ninguna fuente responde, se usa un rendimiento regional conservador (Costa 1.150 · Sierra 1.250 · Amazonía 1.050 · Insular 1.400 kWh/kWp/año), y el estudio lo advierte.
+5. Si ninguna fuente responde, se usa un rendimiento regional conservador (Costa 1.150 · Sierra 1.250 · Amazonía 1.050 · Insular 1.400 kWh/kWp/año), y el estudio lo advierte en sus advertencias visibles. Las notas del recurso (fuentes comparadas, fuente que no respondió, dato guardado usado) van en el resultado, la pantalla y el PDF.
 
 ## 2. Pérdidas (aplicadas una sola vez)
 

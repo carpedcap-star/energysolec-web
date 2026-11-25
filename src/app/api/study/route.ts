@@ -2,7 +2,7 @@ import { StudyInput } from '@/lib/engine/study';
 import { runStudy } from '@/lib/engine/study';
 import { getSolarResource } from '@/lib/engine/resource';
 import { defaultTariffFor } from '@/lib/engine/default-tariffs';
-import { getStore } from '@/lib/data/store';
+import { getStore, solarResourceCache } from '@/lib/data/store';
 import { PROVINCES } from '@/lib/ecuador';
 import { guard, json } from '@/lib/request';
 import { firstError } from '@/lib/schemas';
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     ?? tariffs.find((t) => t.segment === input.segment) ?? defaultTariffFor(input.segment);
 
   const lat = input.lat ?? prov.lat, lng = input.lng ?? prov.lng;
-  const resource = await getSolarResource(lat, lng, input.tilt, prov.region, params);
+  const resource = await getSolarResource(lat, lng, input.tilt, prov.region, params, fetch, solarResourceCache());
   if (input.lat == null) resource.notes.push(`Ubicación aproximada: capital provincial (${prov.capital}).`);
 
   const results = runStudy(input, resource, tariff, params);

@@ -12,6 +12,8 @@ import { SEED_BRANDS, SEED_PRODUCTS, SEED_PROJECTS, SEED_STATS } from './seed';
 import { effectivePrice } from '../services/catalog';
 import { productPricing } from '../services/trade';
 import type { ReminderLead } from '../services/followup';
+import { sum } from '../engine/solar';
+import type { ResourceCache, SourceId, SourceResult } from '../engine/resource';
 import { toPublicProject } from '../services/projects';
 import { toPublicBrand } from '../services/brands';
 import { isLive, toPublicPost } from '../services/blog';
@@ -162,6 +164,12 @@ export interface Store {
   startCronRun(trigger: CronRun['trigger'], actor: string | null): Promise<string>;
   finishCronRun(id: string, r: { ok: boolean; summary: Record<string, unknown>; error?: string | null }): Promise<void>;
   listCronRuns(limit?: number): Promise<CronRun[]>;
+  // ---- Caché del recurso solar (una fila por celda y fuente)
+  getSolarCache(cell: string, source: SourceId): Promise<SourceResult | null>;
+  putSolarCache(cell: string, source: SourceId, r: SourceResult, at: { lat: number; lng: number; tilt: number }): Promise<void>;
+  solarCacheStats(): Promise<{ rows: number; cells: number; oldest: string | null; newest: string | null; bySource: Record<string, number> }>;
+  /** Vacía la caché (todas las filas, o las consultadas antes de `before`). Devuelve cuántas borró. */
+  clearSolarCache(before?: string): Promise<number>;
   track(name: string, props?: Record<string, unknown>): Promise<void>;
   countEvents(name: string, sinceDays: number): Promise<number>;
   rateLimit(bucket: string, max: number, windowSec: number): Promise<boolean>;
@@ -185,6 +193,7 @@ type DevDb = {
   bills: (BillUpload & { path: string; mime: string })[];
   trade: DevTrade[];
   cron_runs: CronRun[];
+  solar_cache: Record<string, SourceResult & { cell: string; source: SourceId; lat: number; lng: number; tilt: number }>;
 };
 /** Cuenta comercial en el archivo local: contraseña scrypt y token de acceso guardado solo como hash. */
 type DevTrade = Omit<TradeAccount, 'activated'> & { approved_by: string | null; password_hash?: string; token_hash?: string; token_expires?: number };
@@ -259,6 +268,17 @@ function devLegacyMessage(m: unknown): OutboundMessage {
     attempts: 0, created_at: o.at ?? new Date().toISOString(), sent_at: status === 'enviado' ? o.at ?? null : null, next_attempt_at: null, last_attempt_at: null,
   };
 }
+function solarStats(rows: { cell: string; source: string; fetched_at: string }[]) {
+  const dates = rows.map((r) => r.fetched_at).sort();
+  const bySource: Record<string, number> = {};
+  for (const r of rows) bySource[r.source] = (bySource[r.source] ?? 0) + 1;
+  return { rows: rows.length, cells: new Set(rows.map((r) => r.cell)).size, oldest: dates[0] ?? null, newest: dates.at(-1) ?? null, bySource };
+}
+/** Adaptador de la caché del almacén para el motor (src/lib/engine/resource.ts). */
+export const solarResourceCache = (): ResourceCache => {
+  const st = getStore();
+  return { get: (c, s) => st.getSolarCache(c, s), put: (c, s, r, at) => st.putSolarCache(c, s, r, at) };
+};
 const withoutBody = (m: OutboundMessage): OutboundMessage => ({ ...m, payload: { subject: m.payload?.subject ?? '', has_body: !!m.payload?.html } });
 const EMPTY_STATS = { pendiente: 0, enviado: 0, error: 0, bloqueado_sin_consentimiento: 0 };
 const devTradeOut = (t: DevTrade): TradeAccount => {
@@ -334,14 +354,14 @@ async function devLoad(): Promise<DevDb> {
   // Solo se crea una base nueva si el archivo no existe: un JSON dañado se reporta, nunca se sobrescribe con la semilla.
   if (raw != null) {
     const db = JSON.parse(raw) as DevDb;
-    db.media ??= []; db.content_blocks ??= []; db.services ??= []; db.posts ??= []; db.users ??= []; db.settings ??= {}; db.bills ??= []; db.trade ??= []; db.cron_runs ??= [];
+    db.media ??= []; db.content_blocks ??= []; db.services ??= []; db.posts ??= []; db.users ??= []; db.settings ??= {}; db.bills ??= []; db.trade ??= []; db.cron_runs ??= []; db.solar_cache ??= {};
     // Mensajes de archivos anteriores (sin id ni cuerpo): no se pueden reintentar.
     db.messages = (db.messages ?? []).map((m) => (m as Partial<OutboundMessage>).id ? m : devLegacyMessage(m));
     devState.cache = db;
   }
   else {
     devState.cache = { params: [{ ...DEFAULT_PARAMS, version: 1 }], tariffs: DEFAULT_TARIFFS.map((t) => ({ ...t, id: randomUUID() })), studies: [], leads: [], activities: [], consents: [],
-      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [], posts: [], users: [], settings: {}, bills: [], trade: [], cron_runs: [] };
+      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [], posts: [], users: [], settings: {}, bills: [], trade: [], cron_runs: [], solar_cache: {} };
     await devSave();
   }
   return devState.cache!;
@@ -674,6 +694,14 @@ const devStore: Store = {
   startCronRun: (trigger, actor) => tx((db) => { const id = randomUUID(); db.cron_runs.push({ id, trigger, actor, started_at: new Date().toISOString(), finished_at: null, ok: null, summary: null, error: null }); return id; }),
   finishCronRun: (id, r) => tx((db) => { const c = db.cron_runs.find((x) => x.id === id); if (c) Object.assign(c, { finished_at: new Date().toISOString(), ok: r.ok, summary: r.summary, error: r.error ?? null }); db.cron_runs = db.cron_runs.slice(-200); }),
   listCronRuns: (limit = 20) => tx((db) => [...db.cron_runs].sort((a, b) => b.started_at.localeCompare(a.started_at)).slice(0, limit)),
+  getSolarCache: (cell, source) => tx((db) => { const r = db.solar_cache[`${cell}#${source}`]; return r ? { monthlyYieldPreLoss: r.monthlyYieldPreLoss, monthlyPoaKwhM2: r.monthlyPoaKwhM2, period: r.period, fetchedAt: r.fetchedAt } : null; }),
+  putSolarCache: (cell, source, r, at) => tx((db) => { db.solar_cache[`${cell}#${source}`] = { ...r, cell, source, ...at }; }),
+  solarCacheStats: () => tx((db) => solarStats(Object.values(db.solar_cache).map((r) => ({ cell: r.cell, source: r.source, fetched_at: r.fetchedAt })))),
+  clearSolarCache: (before) => tx((db) => {
+    let n = 0;
+    for (const [k, r] of Object.entries(db.solar_cache)) if (!before || r.fetchedAt < before) { delete db.solar_cache[k]; n++; }
+    return n;
+  }),
   track: (name, props) => tx((db) => { db.events.push({ name, props, at: new Date().toISOString() }); if (db.events.length > 5000) db.events.splice(0, 1000); }),
   countEvents: (name, days) => tx((db) => { const since = Date.now() - days * 864e5; return db.events.filter((e) => e.name === name && Date.parse(e.at) >= since).length; }),
   rateLimit: (bucket, max, win) => tx((db) => {
@@ -1253,6 +1281,23 @@ const supabaseStore: Store = {
   },
   async finishCronRun(id, r) { must(await sb().from('cron_runs').update({ finished_at: new Date().toISOString(), ok: r.ok, summary: r.summary, error: r.error ?? null }).eq('id', id)); },
   async listCronRuns(limit = 20) { return must(await sb().from('cron_runs').select('*').order('started_at', { ascending: false }).limit(limit)) as CronRun[]; },
+  async getSolarCache(cell, source) {
+    const r = must(await sb().from('solar_resource_cache').select('monthly_kwh_per_kwp, monthly_poa_kwh_m2, period, fetched_at').eq('cell', cell).eq('source', source).maybeSingle()) as
+      { monthly_kwh_per_kwp: (number | string)[]; monthly_poa_kwh_m2: (number | string)[] | null; period: string | null; fetched_at: string } | null;
+    return r ? { monthlyYieldPreLoss: r.monthly_kwh_per_kwp.map(Number), monthlyPoaKwhM2: r.monthly_poa_kwh_m2?.map(Number), period: r.period ?? undefined, fetchedAt: r.fetched_at } : null;
+  },
+  async putSolarCache(cell, source, r, at) {
+    must(await sb().from('solar_resource_cache').upsert({
+      cell, source, monthly_kwh_per_kwp: r.monthlyYieldPreLoss, monthly_poa_kwh_m2: r.monthlyPoaKwhM2 ?? null, period: r.period ?? null,
+      fetched_at: r.fetchedAt, lat: at.lat, lng: at.lng, tilt: at.tilt, annual_kwh_per_kwp: Math.round(sum(r.monthlyYieldPreLoss) * 10) / 10,
+    }, { onConflict: 'cell,source' }));
+  },
+  async solarCacheStats() { return solarStats(must(await sb().from('solar_resource_cache').select('cell, source, fetched_at').limit(20000)) as { cell: string; source: string; fetched_at: string }[]); },
+  async clearSolarCache(before) {
+    let q = sb().from('solar_resource_cache').delete().neq('cell', '');
+    if (before) q = q.lt('fetched_at', before);
+    return (must(await q.select('cell')) as unknown[]).length;
+  },
   async track(name, props) { await sb().from('events').insert({ name, props, path: (props?.path as string) ?? null }); },
   async countEvents(name, days) { const { count } = await sb().from('events').select('id', { count: 'exact', head: true }).eq('name', name).gte('at', new Date(Date.now() - days * 864e5).toISOString()); return count ?? 0; },
   async rateLimit(bucket, max, win) { const r = await sb().rpc('hit_rate_limit', { p_bucket: bucket, p_max: max, p_window_seconds: win }); return r.error ? true : !!r.data; },

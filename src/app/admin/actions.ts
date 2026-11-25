@@ -24,6 +24,7 @@ import { canTransition, requiresApprover, ReviewSchema, tierLabel, TRADE_STATUS 
 import { sendTradeAccessEmail, tradeAccessUrl } from '@/lib/services/trade-mail';
 import { runJobs } from '@/lib/services/cron-jobs';
 import { parseEcLocal } from '@/lib/services/followup';
+import { checkSources, type SourceCheck } from '@/lib/engine/resource';
 
 export async function loginAction(_: unknown, fd: FormData) {
   const err = await signIn(String(fd.get('email') ?? ''), String(fd.get('password') ?? ''), (fd.get('role') as AppRole) || 'superadmin');
@@ -653,4 +654,20 @@ export async function requeueMessageAction(id: string, _fd: FormData) {
   await requireStaff('messages');
   await getStore().requeueMessage(id);
   revalidatePath('/admin/mensajes');
+}
+
+// ---------------------------------------------------------------- Recurso solar
+export async function verifySourcesAction(_: unknown, _fd: FormData): Promise<{ error?: string; checks?: SourceCheck[]; at?: string }> {
+  const staff = await requireStaff('params');
+  // 9 consultas a servicios públicos por verificación: con límite para no abusar de ellos.
+  if (!(await guard(`verify_sources:${staff.id}`, 5, 600))) return { error: 'Ya verificaste varias veces. Espera unos minutos.' };
+  return { checks: await checkSources(fetch), at: new Date().toISOString() };
+}
+
+export async function clearSolarCacheAction(_: unknown, _fd: FormData): Promise<{ error?: string; cleared?: number }> {
+  await requireStaff('params');
+  let n: number;
+  try { n = await getStore().clearSolarCache(); } catch (e) { return { error: (e as Error).message }; }
+  revalidatePath('/admin/recurso-solar');
+  return { cleared: n };
 }

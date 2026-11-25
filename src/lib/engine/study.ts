@@ -38,7 +38,7 @@ const PEAK_TO_DAYTIME: Record<string, number> = { manana: 0.55, mediodia: 0.7, t
 export type StudyResult = {
   consumption: { monthlyKwh: number[]; estimatedFromBill: boolean; annualKwh: number };
   sizing: ReturnType<typeof sizeSystem>;
-  resource: { source: string; candidates?: { source: string; annual: number }[] };
+  resource: { source: string; candidates?: import('./resource').Candidate[]; notes?: string[] };
   scenarios: Record<'conservador' | 'base' | 'optimista', FinanceResult>;
   environment: { co2TonsYear: number; co2Tons25: number; treesEquivalent: number };
   tariff: { code: string; name: string; isPlaceholder: boolean; sourceNote: string };
@@ -48,7 +48,7 @@ export type StudyResult = {
   disclaimer: string;
 };
 
-export function runStudy(input: StudyInput, resource: SolarResource & { candidates?: { source: string; annual: number }[] }, tariff: Tariff, p: CalcParams): StudyResult {
+export function runStudy(input: StudyInput, resource: SolarResource & { candidates?: import('./resource').Candidate[] }, tariff: Tariff, p: CalcParams): StudyResult {
   const warnings: string[] = [];
   let monthly: number[];
   let estimatedFromBill = false;
@@ -83,6 +83,8 @@ export function runStudy(input: StudyInput, resource: SolarResource & { candidat
   if (input.budgetUsd && scenarios.base.capex.total > input.budgetUsd * 1.15)
     warnings.push('La inversión estimada supera el presupuesto indicado; podemos plantear un sistema por etapas o financiamiento.');
   if (sizing.limitedByArea) warnings.push('El espacio disponible limita la potencia instalable.');
+  // Sin ninguna fuente de irradiación el estudio usa un rendimiento regional: el cliente debe saberlo.
+  if (!resource.candidates?.length) warnings.push('No fue posible consultar las fuentes de irradiación (PVGIS y NASA POWER): se usó un rendimiento regional conservador. Recalcularemos el estudio con datos de tu ubicación.');
   if (tariff.is_placeholder) warnings.push('Tarifa eléctrica PROVISIONAL: pendiente de validar con el pliego tarifario vigente.');
   if (p.isPlaceholder) warnings.push('Parámetros de precios PROVISIONALES: pendientes de validación por Energy Solutions Ecuador.');
   if (tariff.has_demand_charge && !p.financial.demandSavingsFromPv)
@@ -95,7 +97,7 @@ export function runStudy(input: StudyInput, resource: SolarResource & { candidat
 
   return {
     consumption: { monthlyKwh: monthly, estimatedFromBill, annualKwh: Math.round(monthly.reduce((a, b) => a + b, 0)) },
-    sizing, resource: { source: resource.source, candidates: resource.candidates }, scenarios,
+    sizing, resource: { source: resource.source, candidates: resource.candidates, notes: resource.notes }, scenarios,
     environment: { co2TonsYear: round(co2Year, 1), co2Tons25: round(co2_25, 0), treesEquivalent: Math.round((co2Year * 1000) / 21.8) },
     tariff: { code: tariff.code, name: tariff.name, isPlaceholder: tariff.is_placeholder, sourceNote: tariff.source_note },
     paramsVersion: p.version, paramsPlaceholder: p.isPlaceholder, warnings,

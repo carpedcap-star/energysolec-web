@@ -19,6 +19,7 @@ Acceso: `https://www.energysolec.com/admin/login` con el usuario que te asigne e
 | Cuentas comerciales (aprobar, suspender) | ✓ | ✓ | | | | |
 | Asignar asesor a un lead | ✓ | ✓ | | | | |
 | Mensajes y tareas | ✓ | ✓ | | | | |
+| Recurso solar | ✓ | ✓ | | | ✓ | |
 
 ## CRM
 
@@ -166,6 +167,13 @@ Acceso: `https://www.energysolec.com/admin/login` con el usuario que te asigne e
 - Un correo que falla se reintenta solo a los 5 min, 30 min, 2 h y 12 h. Tras el quinto fallo queda en «Error» y se puede **Reintentar** a mano. Los correos con enlaces de activación no se guardan: si fallan, genera un enlace nuevo desde la ficha del usuario o de la cuenta.
 - Sin proveedor de correo, los correos esperan en cola hasta que se configure; los resúmenes de seguimiento vencen a las 20 horas y el resto a los 3 días.
 - Las tareas corren solas cada mañana. **Ejecutar tareas ahora** las lanza al momento: reintento de correos, recordatorios y depuración (planillas sin lead de más de 7 días).
+
+## Recurso solar
+
+- La calculadora consulta PVGIS-NSRDB, PVGIS-ERA5 y NASA POWER y adopta el rendimiento menor. Cada resultado se guarda 180 días por zona de unos 5 km: los estudios siguientes en la misma zona son instantáneos y no dependen de que las fuentes respondan.
+- En **Recurso solar** ves cuántas zonas hay guardadas y el resultado de la verificación diaria. **Verificar fuentes ahora** consulta en vivo las tres fuentes en Guayaquil, Quito y Puerto Baquerizo Moreno. Una falla aislada suele ser pasajera; si una fuente falla varios días seguidos, avisa a Ingeniería.
+- **Vaciar caché** obliga a volver a consultar las fuentes, por ejemplo si una de ellas publica datos nuevos.
+- Si ninguna fuente responde, el estudio usa el rendimiento regional de **Parámetros** y se lo advierte al cliente.
 
 ## Otros datos
 

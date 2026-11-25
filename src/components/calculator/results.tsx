@@ -50,7 +50,7 @@ export function StudyResults({ r, code, token }: { r: StudyResult; code: string;
           <div className="flex gap-4 text-xs text-muted"><Lg c="#c9c6c3" t="Consumo" /><Lg c="#FDC913" t="Generación" /><Lg c="#0082AA" t="Autoconsumo" /></div>
         </div>
         <MonthlyBars cons={r.consumption.monthlyKwh} gen={z.monthlyGeneration} self={z.monthlySelfConsumed} />
-        <p className="mt-3 text-xs text-muted">Consumo anual {fmtKwh(r.consumption.annualKwh)}{r.consumption.estimatedFromBill ? ' (estimado desde tu factura)' : ''}. Rendimiento específico {fmtNum(z.specificYieldYear1, 0)} kWh/kWp/año. Fuente: {r.resource.source}.</p>
+        <p className="mt-3 text-xs text-muted">Consumo anual {fmtKwh(r.consumption.annualKwh)}{r.consumption.estimatedFromBill ? ' (estimado desde tu factura)' : ''}. Rendimiento específico {fmtNum(z.specificYieldYear1, 0)} kWh/kWp/año. Fuente: {r.resource.source}.{r.resource.notes?.length ? ` ${r.resource.notes.join(' ')}` : ''}</p>
       </div>
 
       <div className="card overflow-hidden">

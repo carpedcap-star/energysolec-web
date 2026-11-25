@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
+    "test:live": "LIVE_SOURCES=1 NODE_USE_ENV_PROXY=1 vitest run src/lib/engine/resource.live.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

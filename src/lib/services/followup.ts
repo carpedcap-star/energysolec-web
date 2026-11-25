@@ -118,11 +118,12 @@ export const BILL_RETENTION_DAYS = 7;
 export const billPurgeBefore = (now: number) => new Date(now - BILL_RETENTION_DAYS * 86_400e3).toISOString();
 
 // ---------------------------------------------------------------- Resumen de ejecución
-const JOB_LABEL: Record<string, string> = { mensajes: 'Correos', recordatorios: 'Recordatorios', depuracion: 'Depuración' };
+const JOB_LABEL: Record<string, string> = { mensajes: 'Correos', recordatorios: 'Recordatorios', depuracion: 'Depuración', fuentes: 'Fuentes solares' };
 const SUMMARY_LABEL: Record<string, string> = {
   enviados: 'enviados', reprogramados: 'reprogramados', fallidos: 'fallidos', vencidos: 'vencidos', bloqueados: 'sin consentimiento',
   resumenes: 'resúmenes', actividades: 'actividades', sin_contactar: 'sin contactar', sin_destinatario: 'sin destinatario',
-  planillas_borradas: 'planillas borradas', limites_limpiados: 'límites limpiados',
+  planillas_borradas: 'planillas borradas', limites_limpiados: 'límites limpiados', cache_solar_borrada: 'celdas de caché solar borradas',
+  fuentes_ok: 'correctas', fuentes_con_falla: 'con falla',
 };
 /** «Correos: 2 enviados · Recordatorios: 1 resúmenes, 3 actividades · …» para el panel. */
 export function summaryText(s: Record<string, unknown> | null | undefined): string {

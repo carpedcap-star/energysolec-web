@@ -199,7 +199,8 @@ function StudyDoc({ study, contact }: { study: Study; contact: ReportContact }) 
         <Text style={[s.h3, { marginTop: 10 }]}>Pérdidas del sistema consideradas</Text>
         {z.lossItems.map((l) => <Text key={l.label}>• {l.label}: {fmtNum(l.loss * 100)} %</Text>)}
         <Text style={[s.h3, { marginTop: 10 }]}>Fuentes</Text>
-        <Text>• Recurso solar: {r.resource.source}.{r.resource.candidates?.length ? ` Valores comparados: ${r.resource.candidates.map((c) => `${c.source} ${c.annual} kWh/kWp`).join('; ')}.` : ''}</Text>
+        <Text>• Recurso solar: {r.resource.source}.{r.resource.candidates?.length ? ` Valores comparados: ${r.resource.candidates.map((c) => `${c.source}${c.period ? ` (${c.period})` : ''} ${c.annual} kWh/kWp`).join('; ')}.` : ''}</Text>
+        {r.resource.notes?.map((n, i) => <Text key={i}>• {n}</Text>)}
         <Text>• Tarifa aplicada: {r.tariff.name} ({r.tariff.code}). {r.tariff.sourceNote}</Text>
         <Text>• Parámetros técnico-económicos: versión {r.paramsVersion}{r.paramsPlaceholder ? ' (provisional)' : ''}.</Text>
         <Text>• Los excedentes exportados a la red no se valoran económicamente salvo que la regulación aplicable y el régimen del cliente lo permitan y esté configurado.</Text>
