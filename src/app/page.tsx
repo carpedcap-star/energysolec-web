@@ -35,9 +35,9 @@ export default async function Home() {
           </div>
         ) : <HeroBackdrop />}
         <div className="container-site relative grid min-h-[92vh] content-center gap-10 pb-16 pt-32 lg:grid-cols-[1.25fr_1fr] lg:items-end">
-          <div className="reveal">
+          <div className="reveal min-w-0">
             <p className="eyebrow !text-brand">{hero.text('eyebrow')}</p>
-            <h1 className="font-display mt-5 break-words text-[2.6rem] font-extrabold leading-[1.02] max-sm:hyphens-auto sm:text-6xl lg:text-[4.4rem]">
+            <h1 className="font-display mt-5 [overflow-wrap:anywhere] text-[clamp(1.9rem,9vw,2.6rem)] font-extrabold leading-[1.02] sm:text-6xl lg:text-[4.4rem]">
               {hero.text('title')} <span className="text-brand">{hero.text('highlight')}</span>
             </h1>
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-white/75">{hero.text('lead')}</p>

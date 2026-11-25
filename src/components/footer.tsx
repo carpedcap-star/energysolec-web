@@ -1,14 +1,14 @@
 import Link from 'next/link';
-import Image from 'next/image';
+import { BrandLogo } from './brand-logo';
 import { NAV } from '@/lib/nav';
 import { SITE } from '@/lib/site';
 
-export function Footer() {
+export function Footer({ logoDark }: { logoDark: string }) {
   return (
     <footer className="bg-brand-dark text-white/75">
       <div className="container-site grid gap-10 py-16 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
         <div>
-          <Image src="/brand/logo-dark.png" alt="Energy Solutions" width={190} height={63} className="h-14 w-auto" />
+          <BrandLogo src={logoDark} width={190} height={63} className="h-14 w-auto" />
           <p className="mt-5 max-w-xs text-sm leading-relaxed">Ingeniería, tecnología y soluciones energéticas para un futuro más eficiente, rentable y sostenible.</p>
         </div>
         <div>

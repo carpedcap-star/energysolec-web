@@ -112,9 +112,18 @@ Campos clave: `pricing.pvTiers` (USD/kWp sin IVA por tramo), `pricing.batteryUsd
 - **Protecciones**: nadie puede cambiar su propio rol ni desactivarse, y siempre debe quedar al menos un superadministrador activo.
 - Los **roles** son fijos porque la base de datos aplica los mismos permisos; la tabla «Qué puede hacer cada rol» los resume.
 
+## Identidad gráfica
+
+**/admin/identidad** (roles *superadmin* y *marketing*): colores y logos del sitio y del panel.
+
+- Tres colores: **acción** (botones principales y énfasis), **base oscuro** (pie, secciones oscuras, panel) y **datos y enlaces**. La vista previa muestra los componentes reales con la paleta elegida.
+- El panel calcula el **contraste** de cada combinación que usa el sitio. Una paleta ilegible no se puede guardar; las que quedan por debajo de lo recomendado se marcan con un aviso.
+- Logos para fondos claros, para fondos oscuros y favicon, en PNG o WebP con fondo transparente (SVG no se acepta por seguridad). «Usar el original» vuelve al logo de fábrica.
+- Al guardar, el cambio se aplica a todas las páginas, al ícono del navegador, a la imagen para redes y a los datos estructurados de la organización.
+
 ## Otros datos
 
-Hasta que se entreguen las pantallas de la fase 2, se gestionan desde **Supabase Studio → Table Editor** (tabla `site_settings`: identidad gráfica e integraciones) y **Storage → public-media** para imágenes y fichas técnicas. Reglas que la base de datos hace cumplir:
+Hasta que se entreguen las pantallas de la fase 2, se gestionan desde **Supabase Studio → Table Editor** (tabla `site_settings`: datos de contacto e integraciones) y **Storage → public-media** para imágenes y fichas técnicas. Reglas que la base de datos hace cumplir:
 
 - Un producto con `is_placeholder = true` no puede publicarse.
 - Un proyecto muestra el cliente solo con `client_name_authorized`, la ubicación en el mapa solo con `location_authorized`, el ahorro solo con `financials_authorized` y el testimonio solo con `testimonial_verified` (vista `projects_public`; la clave pública no puede leer esas columnas de la tabla).

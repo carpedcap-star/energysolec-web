@@ -22,7 +22,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
     <section className="pb-24 pt-32"><div className="container-site grid gap-12 lg:grid-cols-[1.2fr_1fr]">
       <div className="min-w-0">
         <nav className="text-sm text-muted"><Link href="/servicios" className="hover:underline">Servicios</Link> / {s.name}</nav>
-        <h1 className="font-display mt-3 break-words text-4xl font-extrabold max-sm:hyphens-auto sm:text-5xl">{s.name}</h1>
+        <h1 className="font-display mt-3 [overflow-wrap:anywhere] text-4xl font-extrabold sm:text-5xl">{s.name}</h1>
         {s.segments.length > 0 && <div className="mt-4 flex flex-wrap gap-2">{s.segments.map((g) => <Link key={g} href={`/soluciones/${g}`} className="rounded-full border border-line px-3 py-1 text-sm capitalize text-muted hover:border-ink">{g}</Link>)}</div>}
         {s.cover && <img src={s.cover} alt={s.name} className="mt-8 aspect-[16/9] w-full rounded-3xl object-cover" />}
         {s.isPlaceholder ? (

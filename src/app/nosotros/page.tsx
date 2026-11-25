@@ -16,7 +16,7 @@ export default async function Page() {
   return (
     <section className="pb-24 pt-32"><div className="container-site max-w-3xl">
       <p className="eyebrow">Nosotros</p>
-      <h1 className="font-display mt-3 break-words text-4xl font-extrabold max-sm:hyphens-auto sm:text-5xl">{b.text('title')}</h1>
+      <h1 className="font-display mt-3 [overflow-wrap:anywhere] text-4xl font-extrabold sm:text-5xl">{b.text('title')}</h1>
       {b.isPlaceholder && <span className="placeholder-badge mt-4">Contenido provisional</span>}
       <p className="mt-6 text-lg leading-relaxed text-muted">{b.text('lead')}</p>
       {img && <img src={img.url} alt={b.text('imageAlt')} className="mt-10 aspect-[16/9] w-full rounded-3xl object-cover" />}

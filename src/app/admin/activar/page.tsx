@@ -1,4 +1,5 @@
-import Image from 'next/image';
+import { BrandLogo } from '@/components/brand-logo';
+import { getIdentity } from '@/lib/identity';
 import type { Metadata } from 'next';
 import { ActivateForm } from './form';
 
@@ -12,7 +13,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
   return (
     <div className="grid min-h-screen place-items-center bg-brand-dark p-4">
       <div className="w-full max-w-sm rounded-3xl bg-white p-8">
-        <Image src="/brand/logo.png" alt="Energy Solutions" width={170} height={56} className="h-12 w-auto" />
+        <BrandLogo src={(await getIdentity()).urls.logo} width={170} height={56} className="h-12 w-auto" />
         <h1 className="mt-6 text-xl font-bold">{recovery ? 'Elige una nueva contraseña' : 'Activa tu cuenta'}</h1>
         {token_hash ? (
           <>

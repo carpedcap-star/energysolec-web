@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import Image from 'next/image';
+import { BrandLogo } from './brand-logo';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { NAV } from '@/lib/nav';
@@ -8,7 +8,7 @@ import { useCart } from './cart';
 import { IconCart, IconClose, IconMenu, IconWhatsapp } from './icons';
 import { SITE, waLink } from '@/lib/site';
 
-export function Header() {
+export function Header({ logo, logoDark }: { logo: string; logoDark: string }) {
   const path = usePathname();
   const { count } = useCart();
   const [open, setOpen] = useState(false);
@@ -22,7 +22,7 @@ export function Header() {
     <header className={`fixed inset-x-0 top-0 z-40 transition-colors ${dark ? 'bg-transparent' : 'border-b border-line bg-white/95 backdrop-blur'}`}>
       <div className="container-site flex h-[68px] items-center gap-4">
         <Link href="/" className="shrink-0" aria-label="Energy Solutions Ecuador — inicio">
-          <Image src={dark ? '/brand/logo-dark.png' : '/brand/logo.png'} alt="Energy Solutions" width={150} height={50} priority className="h-10 w-auto" />
+          <BrandLogo src={dark ? logoDark : logo} width={150} height={50} priority className="h-10 w-auto" />
         </Link>
         <nav className="ml-2 hidden flex-1 items-center gap-0.5 xl:flex" aria-label="Principal">
           {main.map((n) => n.children ? (

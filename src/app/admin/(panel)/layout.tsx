@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import Image from 'next/image';
+import { BrandLogo } from '@/components/brand-logo';
+import { getIdentity } from '@/lib/identity';
 import { requireStaff, can, type Perm } from '@/lib/auth';
 import { getStore } from '@/lib/data/store';
 import { logoutAction } from '../actions';
@@ -8,7 +9,7 @@ import { roleLabel } from '@/lib/services/users';
 export const dynamic = 'force-dynamic';
 export const metadata = { robots: { index: false } };
 const NAV: [string, string, Perm][] = [
-  ['/admin', 'Dashboard', 'dashboard'], ['/admin/leads', 'CRM · Leads', 'leads'], ['/admin/pedidos', 'Pedidos', 'orders'], ['/admin/productos', 'Productos', 'products'], ['/admin/proyectos', 'Proyectos', 'projects'], ['/admin/contenido', 'Contenido del sitio', 'content'], ['/admin/marcas', 'Marcas', 'brands'], ['/admin/servicios', 'Servicios', 'services'], ['/admin/blog', 'Blog', 'blog'], ['/admin/usuarios', 'Usuarios', 'users_read'],
+  ['/admin', 'Dashboard', 'dashboard'], ['/admin/leads', 'CRM · Leads', 'leads'], ['/admin/pedidos', 'Pedidos', 'orders'], ['/admin/productos', 'Productos', 'products'], ['/admin/proyectos', 'Proyectos', 'projects'], ['/admin/contenido', 'Contenido del sitio', 'content'], ['/admin/marcas', 'Marcas', 'brands'], ['/admin/servicios', 'Servicios', 'services'], ['/admin/blog', 'Blog', 'blog'], ['/admin/usuarios', 'Usuarios', 'users_read'], ['/admin/identidad', 'Identidad gráfica', 'identity'],
   ['/admin/parametros', 'Parámetros de cálculo', 'params'], ['/admin/tarifas', 'Tarifas eléctricas', 'tariffs'], ['/admin/indicadores', 'Indicadores de inicio', 'stats'],
 ];
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -17,7 +18,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <div className="min-h-screen bg-surface lg:grid lg:grid-cols-[240px_1fr]">
       <aside className="border-b border-line bg-brand-dark p-5 text-white lg:min-h-screen lg:border-0">
-        <Image src="/brand/logo-dark.png" alt="Energy Solutions" width={150} height={50} className="h-10 w-auto" />
+        <BrandLogo src={(await getIdentity()).urls.logoDark} width={150} height={50} className="h-10 w-auto" />
         <nav className="mt-8 flex gap-1 overflow-x-auto lg:flex-col">
           {NAV.filter(([, , p]) => can(staff, p)).map(([h, l]) => <Link key={h} href={h} className="whitespace-nowrap rounded-lg px-3 py-2 text-sm text-white/75 hover:bg-white/10 hover:text-white">{l}</Link>)}
         </nav>

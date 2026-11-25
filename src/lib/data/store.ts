@@ -109,6 +109,7 @@ export interface Store {
   /** URL pública y datos de archivos de `media` por id (los que no existen se omiten). */
   resolveMedia(ids: string[]): Promise<Record<string, MediaRef>>;
   getSetting<T>(key: string, fallback: T): Promise<T>;
+  saveSetting(key: string, value: unknown, actor: string): Promise<void>;
   queueMessage(m: { channel: 'email' | 'whatsapp'; to: string; template: string; payload: unknown; status: string; error?: string }): Promise<void>;
   track(name: string, props?: Record<string, unknown>): Promise<void>;
   countEvents(name: string, sinceDays: number): Promise<number>;
@@ -129,6 +130,7 @@ type DevDb = {
   services: DevService[];
   posts: DevPost[];
   users: DevUser[];
+  settings: Record<string, unknown>;
 };
 /** Usuario de desarrollo: contraseña con scrypt y token de acceso guardado solo como hash SHA-256. */
 type DevUser = Omit<StaffUser, 'activated'> & { password_hash?: string; token_hash?: string; token_expires?: number };
@@ -248,12 +250,12 @@ async function devLoad(): Promise<DevDb> {
   // Solo se crea una base nueva si el archivo no existe: un JSON dañado se reporta, nunca se sobrescribe con la semilla.
   if (raw != null) {
     const db = JSON.parse(raw) as DevDb;
-    db.media ??= []; db.content_blocks ??= []; db.services ??= []; db.posts ??= []; db.users ??= [];
+    db.media ??= []; db.content_blocks ??= []; db.services ??= []; db.posts ??= []; db.users ??= []; db.settings ??= {};
     devState.cache = db;
   }
   else {
     devState.cache = { params: [{ ...DEFAULT_PARAMS, version: 1 }], tariffs: DEFAULT_TARIFFS.map((t) => ({ ...t, id: randomUUID() })), studies: [], leads: [], activities: [], consents: [],
-      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [], posts: [], users: [] };
+      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [], posts: [], users: [], settings: {} };
     await devSave();
   }
   return devState.cache!;
@@ -467,7 +469,8 @@ const devStore: Store = {
   }),
   deleteContentBlock: (page, slot) => tx((db) => { db.content_blocks = db.content_blocks.filter((x) => !(x.page === page && x.slot === slot)); }),
   resolveMedia: (ids) => tx((db) => Object.fromEntries(ids.map((id) => [id, devMediaRef(db, id)] as const).filter((e): e is [string, MediaRef] => !!e[1]))),
-  getSetting: async (_k, fallback) => fallback,
+  getSetting: (key, fallback) => tx((db) => (key in db.settings ? structuredClone(db.settings[key]) : fallback) as typeof fallback),
+  saveSetting: (key, value) => tx((db) => { db.settings[key] = structuredClone(value); }),
   queueMessage: (m) => tx((db) => { db.messages.push({ ...m, at: new Date().toISOString() }); }),
   track: (name, props) => tx((db) => { db.events.push({ name, props, at: new Date().toISOString() }); if (db.events.length > 5000) db.events.splice(0, 1000); }),
   countEvents: (name, days) => tx((db) => { const since = Date.now() - days * 864e5; return db.events.filter((e) => e.name === name && Date.parse(e.at) >= since).length; }),
@@ -872,6 +875,7 @@ const supabaseStore: Store = {
     return (r.data as { id: string }).id;
   },
   async deleteService(id) { must(await sb().from('services').delete().eq('id', id)); },
+  async saveSetting(key, value, actor) { must(await sb().from('site_settings').upsert({ key, value, updated_at: new Date().toISOString(), updated_by: isUuid(actor) ? actor : null })); },
   async getSetting(key, fallback) { const r = await sb().from('site_settings').select('value').eq('key', key).maybeSingle(); return (r.data?.value ?? fallback) as any; },
   async queueMessage(m) { await sb().from('outbound_messages').insert({ channel: m.channel, to_address: m.to, template: m.template, payload: m.payload, status: m.status, error: m.error }); },
   async track(name, props) { await sb().from('events').insert({ name, props, path: (props?.path as string) ?? null }); },

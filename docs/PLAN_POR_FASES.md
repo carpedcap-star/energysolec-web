@@ -26,7 +26,8 @@
 - ✅ Panel de marcas (relación comercial con respaldo privado y vigencia, documentos públicos; migración `0004`) y de servicios (catálogo base + contenido validado).
 - ✅ Blog con editor Markdown, vista previa, imágenes, programación, categorías, SEO editable y datos estructurados `BlogPosting`.
 - ✅ Usuarios y roles: invitación por enlace de un solo uso, activación con contraseña propia, desactivación con reasignación de leads, matriz de permisos.
-- Pantallas del panel para identidad gráfica e integraciones. Hoy se gestionan desde Supabase Studio.
+- ✅ Identidad gráfica: colores con control de contraste, logos y favicon desde el panel.
+- Pantallas del panel para datos de contacto e integraciones. Hoy se gestionan desde Supabase Studio.
 - Formularios guiados por campo para parámetros y tarifas (hoy editor JSON validado).
 - Carga de planilla eléctrica en PDF o foto con extracción por IA y confirmación del cliente (tabla y bucket ya creados).
 - Flujo industrial con carga de documentos (curva de carga, planos).

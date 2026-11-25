@@ -36,7 +36,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ld).replace(/</g, '\\u003c') }} />
       <div className="container-site max-w-3xl">
         <nav className="text-sm text-muted"><Link href="/blog" className="hover:underline">Blog</Link>{cat && <> / <Link href={`/blog?categoria=${cat.slug}`} className="hover:underline">{cat.name}</Link></>}</nav>
-        <h1 className="font-display mt-4 break-words text-3xl font-extrabold leading-tight max-sm:hyphens-auto sm:text-5xl">{p.title}</h1>
+        <h1 className="font-display mt-4 [overflow-wrap:anywhere] text-3xl font-extrabold leading-tight sm:text-5xl">{p.title}</h1>
         <p className="mt-4 text-sm text-muted">
           <time dateTime={p.published_at}>{fmt(p.published_at)}</time>{p.author ? ` · ${p.author}` : ''} · {readingMinutes(p.body_md)} min de lectura
         </p>

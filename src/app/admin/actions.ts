@@ -8,6 +8,7 @@ import { SITE } from '@/lib/site';
 import { guard } from '@/lib/request';
 import { esc, sendEmail } from '@/lib/services/messaging';
 import { parseUserForm, roleChangeProblem } from '@/lib/services/users';
+import { normalizeIdentity, parseColorsForm, type Identity } from '@/lib/services/identity';
 import { getStore } from '@/lib/data/store';
 import { CalcParams } from '@/lib/engine/params';
 import { LEAD_STAGES, ORDER_STATUSES, PAID_STATES, type AppRole } from '@/lib/data/types';
@@ -525,4 +526,33 @@ export async function activateAction(_: unknown, fd: FormData): Promise<{ error?
   const err = await activateAccount(String(fd.get('token_hash') ?? ''), type, password);
   if (err) return { error: err };
   redirect('/admin');
+}
+
+// ---------------------------------------------------------------- Identidad gráfica
+export async function saveIdentityAction(_: unknown, fd: FormData): Promise<{ error?: string }> {
+  const staff = await requireStaff('identity');
+  const parsed = parseColorsForm(fd);
+  if ('error' in parsed) return { error: parsed.error };
+  const store = getStore();
+  const current = normalizeIdentity(await store.getSetting<unknown>('brand', null));
+  const next: Identity = { colors: parsed.data, logo: null, logoDark: null, favicon: null };
+  const LOGOS = [['logo', 'Logo para fondos claros'], ['logoDark', 'Logo para fondos oscuros'], ['favicon', 'Ícono del sitio']] as const;
+  const uploads: [typeof LOGOS[number][0], { bytes: Uint8Array; t: SniffedType }][] = [];
+  for (const [k, label] of LOGOS) {
+    // «<k>_id»: el logo cargado que se conserva; vacío = volver al original de public/brand.
+    const keep = String(fd.get(`${k}_id`) ?? '');
+    if (keep && keep !== current[k]) return { error: 'Los logos cambiaron mientras editabas. Recarga la página.' };
+    next[k] = keep || null;
+    const f = files(fd.getAll(`${k}_file`))[0];
+    if (!f) continue;
+    const c = await checkedImages([f]);
+    if (typeof c === 'string') return { error: `${label}: ${c} Usa PNG o WebP (SVG no se acepta por seguridad).` };
+    uploads.push([k, c[0]]);
+  }
+  try {
+    for (const [k, c] of uploads) next[k] = (await store.uploadMedia({ bytes: c.bytes, mime: c.t.mime, ext: c.t.ext, kind: 'image', folder: 'brand', alt: 'Energy Solutions Ecuador' })).id;
+    await store.saveSetting('brand', next, staff.id);
+  } catch (e) { return { error: (e as Error).message }; }
+  revalidatePath('/', 'layout'); // colores y logos afectan a todas las páginas
+  redirect('/admin/identidad?guardado=1');
 }

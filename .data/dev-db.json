@@ -2244,5 +2244,6 @@
  "content_blocks": [],
  "services": [],
  "posts": [],
- "users": []
+ "users": [],
+ "settings": {}
 }

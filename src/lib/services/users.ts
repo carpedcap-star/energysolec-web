@@ -18,7 +18,7 @@ export const PERM_LABELS: Record<string, string> = {
   dashboard: 'Dashboard', leads: 'Ver leads (CRM)', leads_edit: 'Gestionar leads', orders: 'Pedidos', verify_payment: 'Verificar pagos',
   params: 'Parámetros de cálculo', tariffs: 'Tarifas eléctricas', stats: 'Indicadores de portada', export: 'Exportar datos',
   products: 'Productos e inventario', projects: 'Proyectos', content: 'Contenido del sitio', brands: 'Marcas', brand_docs: 'Respaldos de marcas',
-  services: 'Servicios', blog: 'Blog', users_read: 'Ver usuarios', users: 'Gestionar usuarios',
+  services: 'Servicios', blog: 'Blog', users_read: 'Ver usuarios', users: 'Gestionar usuarios', identity: 'Identidad gráfica',
 };
 
 export const UserSchema = z.object({
