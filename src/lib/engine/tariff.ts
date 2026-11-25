@@ -13,6 +13,8 @@ export type Tariff = {
   other_charges_pct: number;
   source_note: string;
   is_placeholder: boolean;
+  /** Vigencia del pliego (fecha de inicio). */
+  valid_from?: string;
 };
 
 export type BillBreakdown = { energy: number; demand: number; fixed: number; other: number; total: number };

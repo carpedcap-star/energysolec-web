@@ -10,7 +10,8 @@ import { esc, sendEmail } from '@/lib/services/messaging';
 import { parseUserForm, roleChangeProblem } from '@/lib/services/users';
 import { normalizeIdentity, parseColorsForm, type Identity } from '@/lib/services/identity';
 import { getStore } from '@/lib/data/store';
-import { CalcParams } from '@/lib/engine/params';
+import { parseParamsForm } from '@/lib/services/params-form';
+import { parseTariffForm } from '@/lib/services/tariff-form';
 import { LEAD_STAGES, ORDER_STATUSES, PAID_STATES, type AppRole } from '@/lib/data/types';
 import { checkUpload, parseProductForm, UPLOAD_LIMITS, type SniffedType } from '@/lib/services/catalog';
 import { parseProjectForm, PROJECT_MEDIA_LIMITS } from '@/lib/services/projects';
@@ -67,32 +68,50 @@ export async function updateOrderAction(id: string, _: unknown, fd: FormData) {
   return { ok: true };
 }
 
-export async function saveParamsAction(_: unknown, fd: FormData) {
+/** Solo Gerencia (o superadmin) valida los parámetros; cualquier otro cambio los deja provisionales. */
+const VALIDATES_PARAMS: AppRole[] = ['superadmin', 'gerencia'];
+
+export async function saveParamsAction(_: unknown, fd: FormData): Promise<{ error?: string }> {
   const staff = await requireStaff('params');
-  let raw: unknown;
-  try { raw = JSON.parse(String(fd.get('json'))); } catch { return { error: 'JSON no válido' }; }
-  const parsed = CalcParams.omit({ version: true }).safeParse(raw);
-  if (!parsed.success) return { error: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).slice(0, 5).join(' · ') };
-  const v = await getStore().saveParams(parsed.data, staff.id);
-  revalidatePath('/admin/parametros');
-  return { ok: true, version: v.version };
+  const parsed = parseParamsForm(fd);
+  if ('error' in parsed) return { error: parsed.error };
+  const data = parsed.data;
+  // Quien no valida deja siempre la versión pendiente de Gerencia (aunque la anterior estuviera validada).
+  const forcedPending = !VALIDATES_PARAMS.includes(staff.role);
+  if (forcedPending) data.isPlaceholder = true;
+  let version: number;
+  try { version = (await getStore().saveParams(data, staff.id)).version; } catch (e) { return { error: (e as Error).message }; }
+  revalidatePath('/admin/parametros'); revalidatePath('/calculadora');
+  redirect(`/admin/parametros?guardado=${version}${forcedPending ? '&pendiente=1' : ''}`);
 }
 
-const Block = z.object({ from_kwh: z.number().min(0), to_kwh: z.number().positive().nullable(), usd_per_kwh: z.number().min(0).max(2) });
-const TariffForm = z.object({
-  id: z.string().optional(), code: z.string().min(2).max(40), name: z.string().min(3), segment: z.enum(['residencial', 'comercial', 'industrial']),
-  voltage_level: z.enum(['BT', 'MT', 'AT']), has_demand_charge: z.boolean(), demand_usd_per_kw: z.number().min(0).nullable(),
-  commercialization_usd: z.number().min(0), other_charges_pct: z.number().min(0).max(0.5), energy_blocks: z.array(Block).min(1),
-  source_note: z.string().min(10, 'Indica la fuente: resolución ARCONEL, fecha y distribuidora'), is_placeholder: z.boolean(),
-});
-export async function saveTariffAction(_: unknown, fd: FormData) {
+export async function saveTariffAction(_: unknown, fd: FormData): Promise<{ error?: string }> {
   await requireStaff('tariffs');
-  let raw: unknown; try { raw = JSON.parse(String(fd.get('json'))); } catch { return { error: 'JSON no válido' }; }
-  const p = TariffForm.safeParse(raw);
-  if (!p.success) return { error: p.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).slice(0, 4).join(' · ') };
-  await getStore().saveTariff(p.data as any);
-  revalidatePath('/admin/tarifas');
-  return { ok: true };
+  const parsed = parseTariffForm(fd);
+  if ('error' in parsed) return { error: parsed.error };
+  const t = parsed.data;
+  const store = getStore();
+  const all = await store.listTariffs();
+  if (t.id && !all.some((x) => x.id === t.id)) return { error: 'Tarifa no encontrada.' };
+  // La calculadora elige la tarifa por su código: no puede repetirse entre tarifas activas.
+  if (all.some((x) => x.code === t.code && x.id !== t.id)) return { error: `Ya existe otra tarifa activa con el código ${t.code}.` };
+  let id: string;
+  try { id = await store.saveTariff(t); } catch (e) { return { error: (e as Error).message }; }
+  revalidatePath('/admin/tarifas'); revalidatePath('/calculadora');
+  redirect(`/admin/tarifas/${id}?guardado=1`);
+}
+
+export async function deactivateTariffAction(id: string, _: unknown, _fd: FormData): Promise<{ error?: string }> {
+  await requireStaff('tariffs');
+  const store = getStore();
+  const all = await store.listTariffs();
+  const t = all.find((x) => x.id === id);
+  if (!t) return { error: 'Tarifa no encontrada.' };
+  // Sin ninguna tarifa activa, la calculadora usaría en silencio la tarifa de referencia interna (provisional).
+  if (!all.some((x) => x.id !== id && x.segment === t.segment)) return { error: `Es la única tarifa activa del segmento ${t.segment}: agrega otra antes de desactivarla.` };
+  try { await store.deactivateTariff(id); } catch (e) { return { error: (e as Error).message }; }
+  revalidatePath('/admin/tarifas'); revalidatePath('/calculadora');
+  redirect(`/admin/tarifas?desactivada=${encodeURIComponent(t.code)}`);
 }
 
 export async function saveStatAction(fd: FormData) {

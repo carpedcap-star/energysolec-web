@@ -26,8 +26,12 @@ export interface Store {
   kind: 'supabase' | 'dev';
   getActiveParams(): Promise<CalcParams>;
   saveParams(p: Omit<CalcParams, 'version'>, actor: string): Promise<CalcParams>;
+  /** Solo tarifas activas. */
   listTariffs(): Promise<Tariff[]>;
-  saveTariff(t: Tariff): Promise<void>;
+  /** Crea o actualiza (si trae id). Devuelve el id. */
+  saveTariff(t: Tariff): Promise<string>;
+  /** La tarifa deja de ofrecerse en la calculadora (se conserva para los estudios que la usaron). */
+  deactivateTariff(id: string): Promise<void>;
   createStudy(s: Omit<Study, 'id' | 'code' | 'created_at' | 'unlocked' | 'visit_requested' | 'lead_id'>): Promise<Study>;
   getStudyByCode(code: string): Promise<Study | null>;
   unlockStudy(code: string, leadId: string): Promise<void>;
@@ -277,8 +281,15 @@ const devStore: Store = {
   kind: 'dev',
   getActiveParams: () => tx((db) => db.params[db.params.length - 1]),
   saveParams: (p) => tx((db) => { const v = { ...p, version: db.params.length + 1 } as CalcParams; db.params.push(v); return v; }),
-  listTariffs: () => tx((db) => db.tariffs),
-  saveTariff: (t) => tx((db) => { const i = db.tariffs.findIndex((x) => x.id === t.id); if (i >= 0) db.tariffs[i] = t; else db.tariffs.push({ ...t, id: randomUUID() }); }),
+  listTariffs: () => tx((db) => db.tariffs.filter((t) => (t as Tariff & { active?: boolean }).active !== false)),
+  saveTariff: (t) => tx((db) => {
+    const i = t.id ? db.tariffs.findIndex((x) => x.id === t.id) : -1;
+    if (t.id && i < 0) throw new Error('Tarifa no encontrada.');
+    const row = { ...t, id: t.id ?? randomUUID(), valid_from: t.valid_from ?? new Date().toISOString().slice(0, 10) };
+    if (i >= 0) db.tariffs[i] = row; else db.tariffs.push(row);
+    return row.id;
+  }),
+  deactivateTariff: (id) => tx((db) => { const t = db.tariffs.find((x) => x.id === id); if (t) (t as Tariff & { active?: boolean }).active = false; }),
   createStudy: (s) => tx((db) => {
     const st: Study = { ...s, id: randomUUID(), code: `ESE-${year()}-${pad(++db.seq.study)}`, lead_id: null, unlocked: false, visit_requested: false, created_at: new Date().toISOString() };
     db.studies.push(st); return st;
@@ -608,7 +619,11 @@ const supabaseStore: Store = {
     return { ...p, version };
   },
   async listTariffs() { return must(await sb().from('tariffs').select('*').eq('active', true).order('code')) as Tariff[]; },
-  async saveTariff(t) { must(await sb().from('tariffs').upsert({ ...t, valid_from: (t as any).valid_from ?? new Date().toISOString().slice(0, 10) })); },
+  async saveTariff(t) {
+    const r = must(await sb().from('tariffs').upsert({ ...t, valid_from: t.valid_from ?? new Date().toISOString().slice(0, 10), active: true }).select('id').single()) as { id: string };
+    return r.id;
+  },
+  async deactivateTariff(id) { must(await sb().from('tariffs').update({ active: false }).eq('id', id)); },
   async createStudy(s) {
     const c = sb();
     const { count } = await c.from('solar_studies').select('id', { count: 'exact', head: true }).gte('created_at', `${year()}-01-01`);

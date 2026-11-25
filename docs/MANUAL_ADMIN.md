@@ -31,13 +31,22 @@ Acceso: `https://www.energysolec.com/admin/login` con el usuario que te asigne e
 
 ## Parámetros de cálculo
 
-**/admin/parametros** muestra la versión activa. Al guardar se crea una versión nueva y los estudios siguientes la usan; los anteriores conservan la suya. Cuando Gerencia valide los valores, cambia `"isPlaceholder": true` a `false` para quitar el aviso de valores provisionales.
+**/admin/parametros** (roles *superadmin*, *gerencia* e *ingeniería*): formulario por secciones, con porcentajes en % y unidades visibles.
 
-Campos clave: `pricing.pvTiers` (USD/kWp sin IVA por tramo), `pricing.batteryUsdPerKwh`, `pricing.vatOnCapex`, `financial.discountRate`, `financial.exportCompensation` (`none` | `net_balance` | `fixed_price`), `financial.scenarios`, `technical.gridCo2KgPerKwh`.
+- **Precio por kWp por tramos**: cada tramo aplica hasta la potencia indicada; el último no tiene límite. La «Comprobación de tramos» muestra qué precio aplica a 3, 10, 50, 200 y 1000 kWp.
+- Reglas que el panel verifica antes de guardar: tramos en orden; sombreado ninguno ≤ parcial ≤ significativo; escenarios en orden (conservador ≤ base ≤ optimista en generación y alza de tarifa, al revés en inversión); años de reemplazo dentro de la vida útil.
+- **Excedentes**: «Sin compensación» los valora en $0 (regla de negocio). Con «Precio fijo», el precio es obligatorio. El cargo por demanda no se reduce salvo que se active expresamente.
+- Cada guardado crea una **versión nueva**; los estudios registran la versión usada.
+- **Validación**: solo Gerencia marca los parámetros como validados. Cualquier cambio de otro rol los deja provisionales hasta que Gerencia los revise; mientras tanto, cada estudio lo advierte al cliente.
 
 ## Tarifas eléctricas
 
-**/admin/tarifas**: un registro por tarifa y distribuidora. Los bloques de energía se cargan como `{ "from_kwh", "to_kwh" (null = sin límite), "usd_per_kwh" }`. La fuente es obligatoria (resolución ARCONEL, fecha y distribuidora). Marca `is_placeholder: false` una vez validada.
+**/admin/tarifas** (roles *superadmin*, *gerencia* e *ingeniería*): lista de tarifas activas, alta, edición y desactivación.
+
+- **Bloques de energía**: se indica «hasta cuántos kWh» aplica cada bloque; el inicio de cada uno es el final del anterior, así que no puede haber huecos. El último no tiene límite.
+- **Vista previa de la factura** para 100, 300, 1000 y 5000 kWh (con 20 kW de demanda de ejemplo si aplica), con el mismo cálculo que usa la calculadora: compárala con una planilla real.
+- El **código** no puede repetirse entre tarifas activas. La **fuente** (resolución ARCONEL, fecha y distribuidora) es obligatoria; desmarca «Provisional» cuando esté validada.
+- **Desactivar** quita la tarifa de la calculadora (los estudios ya hechos no cambian). No se puede desactivar la última tarifa activa de un segmento.
 
 ## Indicadores de la portada
 
