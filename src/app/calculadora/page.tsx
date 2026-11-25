@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { getStore } from '@/lib/data/store';
 import { CalculatorWizard } from '@/components/calculator/wizard';
+import { billAiEnabled } from '@/lib/services/bill-extractor';
 
 export const metadata: Metadata = {
   title: 'Calculadora solar Ecuador',
@@ -21,7 +22,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <h1 className="font-display mt-3 text-4xl font-extrabold sm:text-5xl">Descubre cuánto puedes ahorrar</h1>
           <p className="mt-4 text-muted">Irradiación de tu ubicación, tu consumo y tu tarifa. Resultados en tres escenarios con todos los supuestos visibles.</p>
         </div>
-        <CalculatorWizard tariffs={tariffs} initialSegment={seg} initialObjective={q.objetivo} />
+        <CalculatorWizard tariffs={tariffs} initialSegment={seg} initialObjective={q.objetivo} billUpload={billAiEnabled()} />
       </div>
     </section>
   );

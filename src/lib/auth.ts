@@ -30,6 +30,7 @@ export const PERMS = {
   users_read: ['superadmin', 'gerencia'],   // RLS: profiles self_read
   users: ['superadmin'],   // RLS: profiles admin_write
   identity: ['superadmin', 'marketing'],   // RLS: site_settings
+  bills: ['superadmin', 'gerencia', 'ingenieria', 'ventas'],   // RLS: bill_uploads y lectura del bucket bills (0002)
 } satisfies Record<string, AppRole[]>;
 export type Perm = keyof typeof PERMS;
 export const can = (s: Staff | null, p: Perm) => !!s && (PERMS[p] as AppRole[]).includes(s.role);

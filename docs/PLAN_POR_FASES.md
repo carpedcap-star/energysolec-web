@@ -29,7 +29,7 @@
 - ✅ Identidad gráfica: colores con control de contraste, logos y favicon desde el panel.
 - Pantallas del panel para datos de contacto e integraciones. Hoy se gestionan desde Supabase Studio.
 - ✅ Formularios guiados para parámetros y tarifas, con reglas de coherencia, vista previa de factura y validación por Gerencia.
-- Carga de planilla eléctrica en PDF o foto con extracción por IA y confirmación del cliente (tabla y bucket ya creados).
+- ✅ Carga de planilla eléctrica en PDF o foto con lectura por IA (API de Claude) y revisión y confirmación del cliente antes de calcular; planilla visible en la ficha del lead (migración `0005`). Requiere `ANTHROPIC_API_KEY`; pendiente: depurar las planillas no confirmadas con la tarea programada.
 - Flujo industrial con carga de documentos (curva de carga, planos).
 - Cuentas de instaladores y distribuidores con precios diferenciados en la tienda (base de datos y RLS ya preparadas).
 - Recordatorios automáticos de seguimiento y reintento de la cola de correos (tarea programada).

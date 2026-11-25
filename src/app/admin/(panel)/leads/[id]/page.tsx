@@ -6,6 +6,7 @@ import { updateLeadAction } from '../../../actions';
 import { fmtKwp, fmtUsd } from '@/lib/format';
 import { waLink } from '@/lib/site';
 import { staffNames } from '@/lib/staff-names';
+import { BillPanel } from './bill-panel';
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const staff = await requireStaff('leads');
@@ -14,6 +15,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const [l, acts, nameOf] = await Promise.all([store.getLead(id), store.listActivities(id), staffNames()]);
   if (!l || (staff.role === 'ventas' && l.advisor_id && l.advisor_id !== staff.id)) notFound();
   const editable = can(staff, 'leads_edit');
+  const bills = can(staff, 'bills') ? await store.listBillUploadsForLead(l.id) : [];
   const info: [string, string | null | undefined][] = [
     ['Correo', l.email], ['WhatsApp', l.phone], ['Empresa', l.company], ['Segmento', l.segment], ['Ubicación', [l.city, l.province].filter(Boolean).join(', ')],
     ['Consumo mensual', l.monthly_kwh ? `${l.monthly_kwh} kWh` : null], ['Factura mensual', l.monthly_bill_usd ? fmtUsd(l.monthly_bill_usd) : null],
@@ -23,13 +25,14 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   ];
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
-      <div>
+      <div className="min-w-0">
         <h1 className="text-2xl font-bold">{l.full_name}</h1>
         <div className="mt-3 flex flex-wrap gap-2">
           {l.phone && <a className="btn !bg-[#25D366] !py-2 text-white" target="_blank" rel="noopener" href={waLink(`Hola ${l.full_name.split(' ')[0]}, le saluda Energy Solutions Ecuador.`, l.phone.replace(/\D/g, '').replace(/^0/, '593'))}>WhatsApp</a>}
           <a className="btn-ghost !py-2" href={`mailto:${l.email}`}>Correo</a>
         </div>
         <dl className="card mt-6 divide-y divide-line text-sm">{info.filter(([, v]) => v).map(([k, v]) => <div key={k} className="flex gap-4 px-5 py-3"><dt className="w-44 shrink-0 text-muted">{k}</dt><dd className="whitespace-pre-line">{v}</dd></div>)}</dl>
+        {bills.length > 0 && <BillPanel bills={bills} />}
         <h2 className="mt-8 font-semibold">Historial de seguimiento</h2>
         <ol className="mt-3 space-y-3">{acts.map((a) => <li key={a.id} className="card p-4 text-sm"><p className="text-xs text-muted">{new Date(a.at).toLocaleString('es-EC')} · {a.kind}{a.actor ? ` · ${nameOf(a.actor)}` : ''}</p><p className="mt-1 whitespace-pre-line">{a.body}</p></li>)}</ol>
       </div>

@@ -6,6 +6,7 @@ import { MONTHS_ES } from '@/lib/format';
 import type { StudyResult } from '@/lib/engine/study';
 import { StudyResults } from './results';
 import { getUtm, track } from '../consent';
+import { BillUpload, type BillResult } from './bill-upload';
 
 type TariffOpt = { code: string; name: string; segment: string; voltage_level: string; has_demand_charge: boolean; is_placeholder: boolean };
 type Seg = 'residencial' | 'comercial' | 'industrial';
@@ -19,7 +20,7 @@ const OBJECTIVES = [
 ];
 const STEPS = ['Perfil', 'Ubicación', 'Consumo', 'Sitio'];
 
-export function CalculatorWizard({ tariffs, initialSegment, initialObjective }: { tariffs: TariffOpt[]; initialSegment?: Seg; initialObjective?: string }) {
+export function CalculatorWizard({ tariffs, initialSegment, initialObjective, billUpload = false }: { tariffs: TariffOpt[]; initialSegment?: Seg; initialObjective?: string; billUpload?: boolean }) {
   const [step, setStep] = useState(0);
   const [f, setF] = useState<Record<string, any>>({
     mode: 'rapida', segment: initialSegment ?? 'residencial', objective: initialObjective ?? 'reducir_factura', province: 'Guayas', city: '', address: '',
@@ -30,6 +31,9 @@ export function CalculatorWizard({ tariffs, initialSegment, initialObjective }: 
   const [err, setErr] = useState('');
   const [pending, setPending] = useState<{ code: string; teaser: { kwp: number; modules: number; annualGeneration: number } } | null>(null);
   const [done, setDone] = useState<{ r: StudyResult; token: string } | null>(null);
+  // Planilla leída con IA: los datos propuestos llenan el formulario; el cliente debe revisarlos y confirmarlos.
+  const [bill, setBill] = useState<BillResult | null>(null);
+  const [billOk, setBillOk] = useState(false);
   const set = (k: string, v: unknown) => setF((x) => ({ ...x, [k]: v }));
   const segTariffs = useMemo(() => tariffs.filter((t) => t.segment === f.segment), [tariffs, f.segment]);
   const pro = f.mode === 'profesional';
@@ -38,8 +42,18 @@ export function CalculatorWizard({ tariffs, initialSegment, initialObjective }: 
     navigator.geolocation?.getCurrentPosition((p) => { set('lat', +p.coords.latitude.toFixed(5)); set('lng', +p.coords.longitude.toFixed(5)); }, () => setErr('No pudimos obtener tu ubicación; usaremos la provincia.'));
   }
 
+  function applyBill(b: BillResult) {
+    const p = b.proposal;
+    setF((x) => ({
+      ...x, input: p.input, monthlyKwh: p.monthlyKwh, monthlyBillUsd: p.monthlyBillUsd,
+      history: p.input === 'history' ? p.history : x.history, demandKw: p.demandKw || x.demandKw, distributor: p.distributor || x.distributor,
+    }));
+    setBill(b); setBillOk(false); setErr('');
+  }
+
   function validStep(): string {
     if (step === 2) {
+      if (bill && !billOk) return 'Revisa los datos leídos de tu planilla y confirma que son correctos.';
       if (pro && f.input === 'history' && f.history.filter((h: string) => +h > 0).length < 12) return 'Completa los 12 meses de consumo.';
       if (f.input === 'bill' && !(+f.monthlyBillUsd > 0)) return 'Ingresa el valor de tu factura mensual.';
       if (f.input === 'kwh' && !(+f.monthlyKwh > 0)) return 'Ingresa tu consumo mensual en kWh.';
@@ -60,6 +74,7 @@ export function CalculatorWizard({ tariffs, initialSegment, initialObjective }: 
       demandKw: num(f.demandKw) ?? 0, peakHours: f.peakHours || undefined, daytimeShare: f.daytimePct ? Number(f.daytimePct) / 100 : undefined,
       surface: f.surface, availableAreaM2: num(f.availableAreaM2), roofType: f.roofType || undefined, tilt: num(f.tilt) ?? 10, shading: f.shading,
       wantsBattery: f.wantsBattery, backupHours: num(f.backupHours), criticalLoadKw: num(f.criticalLoadKw), budgetUsd: num(f.budgetUsd),
+      billUploadId: bill && billOk ? bill.uploadId : undefined,
     };
     track('calculator_submit', { segment: f.segment, mode: f.mode });
     const r = await fetch('/api/study', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
@@ -155,6 +170,7 @@ export function CalculatorWizard({ tariffs, initialSegment, initialObjective }: 
         )}
         {step === 2 && (
           <div className="grid gap-5 sm:grid-cols-2">
+            {billUpload && <div className="sm:col-span-2"><BillUpload mode={f.mode} result={bill} onRead={applyBill} onDiscard={() => { setBill(null); setBillOk(false); setErr(''); }} /></div>}
             <Field label="¿Qué dato tienes?" className="sm:col-span-2">
               <Choice value={f.input} onChange={(v) => set('input', v)} options={[['bill', 'Valor de la factura (USD)'], ['kwh', 'Consumo mensual (kWh)'], ...(pro ? [['history', '12 meses de consumo']] as [string, string][] : [])]} />
             </Field>
@@ -183,6 +199,12 @@ export function CalculatorWizard({ tariffs, initialSegment, initialObjective }: 
               </select>
             </Field>
             {pro && <Field label="% de consumo diurno (6h–18h)"><input className="input" type="number" min={5} max={100} value={f.daytimePct} onChange={(e) => set('daytimePct', e.target.value)} /></Field>}
+            {bill && (
+              <label className="flex items-start gap-3 rounded-xl border border-line bg-surface p-4 text-sm sm:col-span-2">
+                <input type="checkbox" checked={billOk} onChange={(e) => { setBillOk(e.target.checked); setErr(''); }} className="mt-1" />
+                <span><b>Revisé los datos de consumo y son correctos.</b> El estudio se calculará con los valores de este formulario.</span>
+              </label>
+            )}
           </div>
         )}
         {step === 3 && (

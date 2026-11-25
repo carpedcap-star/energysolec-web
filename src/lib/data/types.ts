@@ -32,6 +32,11 @@ export type Study = {
   unlocked: boolean; visit_requested: boolean; created_at: string;
 };
 
+/** Planilla eléctrica subida por un cliente. `extracted` guarda la propuesta de la IA y, al confirmar, lo que el cliente aceptó. */
+export type BillUpload = {
+  id: string; study_id: string | null; lead_id: string | null; extracted: unknown; confirmed_by_user: boolean; created_at: string;
+};
+
 export type Product = {
   id: string; sku: string; slug: string; name: string; brand: string | null; model: string | null;
   category: string; summary: string | null; specs: Record<string, string | number>; warranty: string | null;

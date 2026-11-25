@@ -14,6 +14,7 @@ Acceso: `https://www.energysolec.com/admin/login` con el usuario que te asigne e
 | Parámetros de cálculo y tarifas | ✓ | ✓ | | | ✓ | |
 | Indicadores de inicio | ✓ | ✓ | | | | |
 | Exportar CSV | ✓ | ✓ | ✓ | | | |
+| Planillas de clientes | ✓ | ✓ | | sus leads y sin asignar | ✓ | |
 
 ## CRM
 
@@ -129,6 +130,14 @@ Acceso: `https://www.energysolec.com/admin/login` con el usuario que te asigne e
 - El panel calcula el **contraste** de cada combinación que usa el sitio. Una paleta ilegible no se puede guardar; las que quedan por debajo de lo recomendado se marcan con un aviso.
 - Logos para fondos claros, para fondos oscuros y favicon, en PNG o WebP con fondo transparente (SVG no se acepta por seguridad). «Usar el original» vuelve al logo de fábrica.
 - Al guardar, el cambio se aplica a todas las páginas, al ícono del navegador, a la imagen para redes y a los datos estructurados de la organización.
+
+## Planillas eléctricas
+
+- En la calculadora, el cliente puede subir su planilla (PDF o foto, máx. 4 MB). Una IA lee el consumo, el valor, la demanda y el historial, **sin** nombre, cédula, dirección ni número de cuenta.
+- El cliente ve lo leído, corrige los campos y debe marcar «Revisé los datos de consumo y son correctos» antes de continuar. El estudio se calcula solo con lo que confirma.
+- La subida exige una autorización separada (LOPDP): el archivo se guarda en el almacenamiento privado `bills` y lo procesa un proveedor externo de IA.
+- En la ficha del lead, la sección **Planilla eléctrica** compara lo leído por la IA con lo confirmado y permite abrir el archivo original. Es un documento con datos personales: no lo reenvíes.
+- La opción aparece solo si el servidor tiene `ANTHROPIC_API_KEY`. Límites: 5 lecturas por hora por visitante y `BILL_DAILY_MAX` (200 por defecto) al día en todo el sitio. Si la lectura falla, el cliente sigue con el ingreso manual.
 
 ## Otros datos
 

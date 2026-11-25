@@ -6,7 +6,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { CalcParams, DEFAULT_PARAMS } from '../engine/params';
 import { DEFAULT_TARIFFS } from '../engine/default-tariffs';
 import type { Tariff } from '../engine/tariff';
-import type { Activity, BlogPost, BlogPostInput, BlogPostRecord, Brand, BrandAssetKind, BrandInput, BrandRecord, Consent, ContentBlockRow, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, ServiceInput, ServiceRow, StaffUser, StaffUserInput, Stat, Study, TierPrice, MediaBucket } from './types';
+import type { Activity, BlogPost, BlogPostInput, BlogPostRecord, Brand, BrandAssetKind, BrandInput, BrandRecord, Consent, ContentBlockRow, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, ServiceInput, ServiceRow, StaffUser, StaffUserInput, Stat, Study, TierPrice, MediaBucket, BillUpload } from './types';
 import { PAID_STATES } from './types';
 import { SEED_BRANDS, SEED_PRODUCTS, SEED_PROJECTS, SEED_STATS } from './seed';
 import { effectivePrice } from '../services/catalog';
@@ -34,7 +34,17 @@ export interface Store {
   deactivateTariff(id: string): Promise<void>;
   createStudy(s: Omit<Study, 'id' | 'code' | 'created_at' | 'unlocked' | 'visit_requested' | 'lead_id'>): Promise<Study>;
   getStudyByCode(code: string): Promise<Study | null>;
+  /** Marca el estudio como desbloqueado y vincula el lead (también a la planilla cargada para ese estudio, si la hay). */
   unlockStudy(code: string, leadId: string): Promise<void>;
+  // ---- Planillas subidas por clientes (bucket privado 'bills')
+  /** Guarda el archivo en el almacenamiento privado y registra la propuesta de la IA. Devuelve el id. */
+  saveBillUpload(f: { bytes: Uint8Array; mime: string; ext: string; extracted: unknown }): Promise<string>;
+  getBillUpload(id: string): Promise<BillUpload | null>;
+  /** Vincula la carga al estudio con los datos que confirmó el cliente. Solo una vez: false si ya estaba vinculada. */
+  confirmBillUpload(id: string, studyId: string, confirmed: unknown): Promise<boolean>;
+  listBillUploadsForLead(leadId: string): Promise<BillUpload[]>;
+  /** Archivo de la planilla (solo panel): bytes en desarrollo, URL firmada de corta duración en Supabase. */
+  getBillFile(id: string): Promise<{ bytes: Uint8Array; mime: string; filename: string } | { signedUrl: string } | null>;
   requestVisit(code: string): Promise<void>;
   createLead(l: Omit<Lead, 'id' | 'created_at' | 'stage' | 'advisor_id'>, consents: Consent[], meta: { ipHash: string; ua: string; policyVersion: string }): Promise<Lead>;
   listLeads(f?: { stage?: LeadStage; advisor?: string }): Promise<Lead[]>;
@@ -135,6 +145,7 @@ type DevDb = {
   posts: DevPost[];
   users: DevUser[];
   settings: Record<string, unknown>;
+  bills: (BillUpload & { path: string; mime: string })[];
 };
 /** Usuario de desarrollo: contraseña con scrypt y token de acceso guardado solo como hash SHA-256. */
 type DevUser = Omit<StaffUser, 'activated'> & { password_hash?: string; token_hash?: string; token_expires?: number };
@@ -254,12 +265,12 @@ async function devLoad(): Promise<DevDb> {
   // Solo se crea una base nueva si el archivo no existe: un JSON dañado se reporta, nunca se sobrescribe con la semilla.
   if (raw != null) {
     const db = JSON.parse(raw) as DevDb;
-    db.media ??= []; db.content_blocks ??= []; db.services ??= []; db.posts ??= []; db.users ??= []; db.settings ??= {};
+    db.media ??= []; db.content_blocks ??= []; db.services ??= []; db.posts ??= []; db.users ??= []; db.settings ??= {}; db.bills ??= [];
     devState.cache = db;
   }
   else {
     devState.cache = { params: [{ ...DEFAULT_PARAMS, version: 1 }], tariffs: DEFAULT_TARIFFS.map((t) => ({ ...t, id: randomUUID() })), studies: [], leads: [], activities: [], consents: [],
-      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [], posts: [], users: [], settings: {} };
+      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [], posts: [], users: [], settings: {}, bills: [] };
     await devSave();
   }
   return devState.cache!;
@@ -295,7 +306,38 @@ const devStore: Store = {
     db.studies.push(st); return st;
   }),
   getStudyByCode: (code) => tx((db) => db.studies.find((s) => s.code === code) ?? null),
-  unlockStudy: (code, leadId) => tx((db) => { const s = db.studies.find((x) => x.code === code); if (s) { s.unlocked = true; s.lead_id = leadId; } }),
+  unlockStudy: (code, leadId) => tx((db) => {
+    const s = db.studies.find((x) => x.code === code);
+    if (!s) return;
+    s.unlocked = true; s.lead_id = leadId;
+    for (const b of db.bills) if (b.study_id === s.id) b.lead_id = leadId;
+  }),
+  saveBillUpload: async (f) => {
+    const id = randomUUID();
+    const rel = `bills/${id}.${f.ext}`;
+    const file = path.join(DEV_PRIVATE_DIR, rel);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, f.bytes);
+    return tx((db) => {
+      db.bills.push({ id, path: rel, mime: f.mime, study_id: null, lead_id: null, extracted: f.extracted, confirmed_by_user: false, created_at: new Date().toISOString() });
+      return id;
+    });
+  },
+  getBillUpload: (id) => tx((db) => { const b = db.bills.find((x) => x.id === id); if (!b) return null; const { path: _p, mime: _m, ...row } = b; return row; }),
+  confirmBillUpload: (id, studyId, confirmed) => tx((db) => {
+    const b = db.bills.find((x) => x.id === id);
+    if (!b || b.confirmed_by_user || b.study_id) return false;
+    b.study_id = studyId; b.confirmed_by_user = true;
+    b.extracted = { ...(b.extracted as object), confirmed };
+    return true;
+  }),
+  listBillUploadsForLead: (leadId) => tx((db) => db.bills.filter((b) => b.lead_id === leadId).map(({ path: _p, mime: _m, ...row }) => row)),
+  getBillFile: async (id) => {
+    const b = await tx((db) => db.bills.find((x) => x.id === id) ?? null);
+    if (!b) return null;
+    try { return { bytes: new Uint8Array(await fs.readFile(path.join(DEV_PRIVATE_DIR, b.path))), mime: b.mime, filename: path.basename(b.path) }; }
+    catch { return null; }
+  },
   requestVisit: (code) => tx((db) => { const s = db.studies.find((x) => x.code === code); if (s) s.visit_requested = true; }),
   createLead: (l, consents, meta) => tx((db) => {
     const lead: Lead = { ...l, id: randomUUID(), stage: 'nuevo', advisor_id: null, created_at: new Date().toISOString() };
@@ -503,6 +545,8 @@ function must<T>(r: { data: T | null; error: { message: string } | null }): T {
 // products.images (uuid[]) y products.datasheet (uuid) apuntan a la tabla `media`; las URL públicas salen de su `path` en public-media.
 const PUBLIC_BUCKET = 'public-media';
 const PRIVATE_BUCKET = 'private-docs';
+const BILLS_BUCKET = 'bills';
+const BILL_COLS = 'id, study_id, lead_id, extracted, confirmed_by_user, created_at';
 const publicUrl = (p: string) => sb().storage.from(PUBLIC_BUCKET).getPublicUrl(p).data.publicUrl;
 async function mediaMap(ids: string[]): Promise<Map<string, MediaRef>> {
   const uniq = [...new Set(ids.filter(Boolean))];
@@ -636,7 +680,43 @@ const supabaseStore: Store = {
     throw new Error('No se pudo generar el código de estudio');
   },
   async getStudyByCode(code) { return must(await sb().from('solar_studies').select('*').eq('code', code).maybeSingle()) as Study | null; },
-  async unlockStudy(code, leadId) { must(await sb().from('solar_studies').update({ unlocked: true, lead_id: leadId }).eq('code', code)); },
+  async unlockStudy(code, leadId) {
+    const st = must(await sb().from('solar_studies').update({ unlocked: true, lead_id: leadId }).eq('code', code).select('id').maybeSingle()) as { id: string } | null;
+    if (st) must(await sb().from('bill_uploads').update({ lead_id: leadId }).eq('study_id', st.id));
+  },
+  async saveBillUpload(f) {
+    const c = sb();
+    const p = `${new Date().toISOString().slice(0, 7)}/${randomUUID()}.${f.ext}`;
+    const up = await c.storage.from(BILLS_BUCKET).upload(p, f.bytes, { contentType: f.mime, upsert: false, cacheControl: '0' });
+    if (up.error) throw new Error(`No se pudo guardar la planilla: ${up.error.message}`);
+    const r = await c.from('bill_uploads').insert({ storage_path: p, extracted: f.extracted }).select('id').single();
+    if (r.error) { await c.storage.from(BILLS_BUCKET).remove([p]); throw new Error(r.error.message); }
+    return (r.data as { id: string }).id;
+  },
+  async getBillUpload(id) {
+    if (!isUuid(id)) return null;
+    return must(await sb().from('bill_uploads').select(BILL_COLS).eq('id', id).maybeSingle()) as BillUpload | null;
+  },
+  async confirmBillUpload(id, studyId, confirmed) {
+    if (!isUuid(id)) return false;
+    const c = sb();
+    const cur = must(await c.from('bill_uploads').select('extracted').eq('id', id).maybeSingle()) as { extracted: unknown } | null;
+    if (!cur) return false;
+    // El filtro confirmed_by_user=false hace la vinculación de un solo uso aunque lleguen dos solicitudes a la vez.
+    const r = must(await c.from('bill_uploads').update({ study_id: studyId, confirmed_by_user: true, extracted: { ...(cur.extracted as object), confirmed } })
+      .eq('id', id).eq('confirmed_by_user', false).is('study_id', null).select('id')) as { id: string }[];
+    return r.length === 1;
+  },
+  async listBillUploadsForLead(leadId) {
+    return must(await sb().from('bill_uploads').select(BILL_COLS).eq('lead_id', leadId).order('created_at', { ascending: false })) as BillUpload[];
+  },
+  async getBillFile(id) {
+    if (!isUuid(id)) return null;
+    const b = must(await sb().from('bill_uploads').select('storage_path').eq('id', id).maybeSingle()) as { storage_path: string } | null;
+    if (!b) return null;
+    const r = await sb().storage.from(BILLS_BUCKET).createSignedUrl(b.storage_path, 60);
+    return r.error || !r.data ? null : { signedUrl: r.data.signedUrl };
+  },
   async requestVisit(code) { must(await sb().from('solar_studies').update({ visit_requested: true }).eq('code', code)); },
   async createLead(l, consents, meta) {
     const c = sb();
