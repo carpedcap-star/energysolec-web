@@ -29,10 +29,10 @@
 - ✅ Identidad gráfica: colores con control de contraste, logos y favicon desde el panel.
 - Pantallas del panel para datos de contacto e integraciones. Hoy se gestionan desde Supabase Studio.
 - ✅ Formularios guiados para parámetros y tarifas, con reglas de coherencia, vista previa de factura y validación por Gerencia.
-- ✅ Carga de planilla eléctrica en PDF o foto con lectura por IA (API de Claude) y revisión y confirmación del cliente antes de calcular; planilla visible en la ficha del lead (migración `0005`). Requiere `ANTHROPIC_API_KEY`; pendiente: depurar las planillas no confirmadas con la tarea programada.
+- ✅ Carga de planilla eléctrica en PDF o foto con lectura por IA (API de Claude) y revisión y confirmación del cliente antes de calcular; planilla visible en la ficha del lead (migración `0005`). Requiere `ANTHROPIC_API_KEY`; las planillas sin lead se borran a los 7 días.
 - Flujo industrial con carga de documentos (curva de carga, planos).
 - ✅ Cuentas de instaladores y distribuidores: solicitud con RUC, aprobación por Gerencia, acceso propio y precios de su nivel en tienda, carrito y pedidos (migración `0006`).
-- Recordatorios automáticos de seguimiento y reintento de la cola de correos (tarea programada).
+- ✅ Recordatorios automáticos de seguimiento (resumen diario por asesor, leads sin contactar, aviso de asignación), reintento de la cola de correos y depuración de planillas (tarea programada, migración `0007`).
 - Caché del recurso solar por celda (tabla creada) y prueba en vivo de PVGIS y NASA POWER desde producción.
 - Pruebas automatizadas de extremo a extremo (Playwright) en CI.
 

@@ -22,6 +22,8 @@ import { parsePostForm } from '@/lib/services/blog';
 import { SERVICES } from '@/content/segments';
 import { canTransition, requiresApprover, ReviewSchema, tierLabel, TRADE_STATUS } from '@/lib/services/trade';
 import { sendTradeAccessEmail, tradeAccessUrl } from '@/lib/services/trade-mail';
+import { runJobs } from '@/lib/services/cron-jobs';
+import { parseEcLocal } from '@/lib/services/followup';
 
 export async function loginAction(_: unknown, fd: FormData) {
   const err = await signIn(String(fd.get('email') ?? ''), String(fd.get('password') ?? ''), (fd.get('role') as AppRole) || 'superadmin');
@@ -39,12 +41,36 @@ export async function updateLeadAction(id: string, fd: FormData) {
   const stage = fd.get('stage') as string;
   const patch: Record<string, unknown> = {};
   if (stage && LEAD_STAGES.some((s) => s.id === stage)) patch.stage = stage;
-  const next = fd.get('next_activity_at') as string;
-  if (next) patch.next_activity_at = new Date(next).toISOString();
+  // La fecha del formulario es hora de Ecuador (el servidor corre en UTC).
+  const next = parseEcLocal(String(fd.get('next_activity_at') ?? ''));
   const nextNote = (fd.get('next_activity_note') as string)?.trim();
-  if (nextNote) patch.next_activity_note = nextNote.slice(0, 300);
+  // El campo viene precargado con la actividad actual: «realizada» la quita salvo que se haya puesto otra fecha.
+  const newDate = !!next && next !== lead.next_activity_at;
+  if (fd.get('activity_done') === 'on' && !newDate) { patch.next_activity_at = null; patch.next_activity_note = null; }
+  else if (next) { patch.next_activity_at = next; patch.next_activity_note = nextNote ? nextNote.slice(0, 300) : null; }
   if (!lead.advisor_id && staff.role === 'ventas') patch.advisor_id = staff.id;
+  // Asignación por Gerencia: solo a un asesor activo; el asesor recibe un aviso.
+  let assigned: { email: string; full_name: string } | null = null;
+  if (can(staff, 'assign_leads') && fd.has('advisor_id')) {
+    const to = String(fd.get('advisor_id') ?? '');
+    if (to !== (lead.advisor_id ?? '')) {
+      if (!to) patch.advisor_id = null;
+      else {
+        const u = (await store.listUsers()).find((x) => x.id === to && x.active && x.is_advisor);
+        if (!u) throw new Error('Elige un asesor activo.');
+        patch.advisor_id = u.id;
+        if (u.id !== staff.id) assigned = u;
+      }
+    }
+  }
+  const prevAdvisor = lead.advisor_id ?? null;   // antes de guardar: el almacén puede devolver el mismo objeto que modifica
   await store.updateLead(id, patch as any, staff.id);
+  if ('advisor_id' in patch && patch.advisor_id !== prevAdvisor)
+    await store.addActivity(id, 'sistema', patch.advisor_id ? `Asignado a ${assigned?.full_name ?? staff.full_name}` : 'Sin asesor asignado', staff.id);
+  if (assigned) await sendEmail({
+    to: assigned.email, template: 'lead_asignado', subject: `Te asignaron un lead: ${lead.full_name}`,
+    html: `<div style="font-family:Arial,sans-serif"><p>Hola ${esc(assigned.full_name)},</p><p>Te asignaron el lead <b>${esc(lead.full_name)}</b>${lead.company ? ` (${esc(lead.company)})` : ''}, fuente ${esc(lead.source)}.</p><p><a href="${esc(SITE.url)}/admin/leads/${encodeURIComponent(id)}">Abrir en el CRM</a></p></div>`,
+  });
   const note = (fd.get('note') as string)?.trim();
   if (note) await store.addActivity(id, (fd.get('kind') as string) || 'nota', note.slice(0, 3000), staff.id);
   revalidatePath(`/admin/leads/${id}`); revalidatePath('/admin/leads');
@@ -612,4 +638,19 @@ export async function sendTradeAccessLinkAction(id: string, _: unknown, _fd: For
   const url = await tradeAccessUrl(tok.token_hash, type);
   const emailSent = await sendTradeAccessEmail(t.email, t.contact_name, t.company, url, type);
   return { ok: true, emailSent, link: emailSent ? undefined : url };
+}
+
+// ---------------------------------------------------------------- Mensajes y tareas programadas
+export async function runJobsAction(_: unknown, _fd: FormData): Promise<{ error?: string; ok?: boolean; summary?: Record<string, unknown> }> {
+  const staff = await requireStaff('messages');
+  if (!(await guard(`run_jobs:${staff.id}`, 6, 600))) return { error: 'Ya ejecutaste las tareas varias veces. Espera unos minutos.' };
+  const r = await runJobs('panel', staff.id);
+  revalidatePath('/admin/mensajes');
+  return r.ok ? { ok: true, summary: r.summary } : { error: `Algunas tareas fallaron: ${r.errors.join(' | ')}`, summary: r.summary };
+}
+
+export async function requeueMessageAction(id: string, _fd: FormData) {
+  await requireStaff('messages');
+  await getStore().requeueMessage(id);
+  revalidatePath('/admin/mensajes');
 }

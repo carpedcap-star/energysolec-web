@@ -32,7 +32,9 @@ export const PERMS = {
   identity: ['superadmin', 'marketing'],   // RLS: site_settings
   bills: ['superadmin', 'gerencia', 'ingenieria', 'ventas'],
   trade: ['superadmin', 'gerencia', 'ventas'],   // RLS: trade_accounts (0002)
-  trade_approve: ['superadmin', 'gerencia'],   // la base lo impone con el disparador guard_trade_account (0006)   // RLS: bill_uploads y lectura del bucket bills (0002)
+  trade_approve: ['superadmin', 'gerencia'],
+  messages: ['superadmin', 'gerencia'],   // RLS: outbound_messages (0002), cron_runs (0007)
+  assign_leads: ['superadmin', 'gerencia'],   // la base lo impone con el disparador guard_trade_account (0006)   // RLS: bill_uploads y lectura del bucket bills (0002)
 } satisfies Record<string, AppRole[]>;
 export type Perm = keyof typeof PERMS;
 export const can = (s: Staff | null, p: Perm) => !!s && (PERMS[p] as AppRole[]).includes(s.role);

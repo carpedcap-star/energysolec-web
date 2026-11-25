@@ -47,7 +47,7 @@ export async function POST(req: Request) {
       const pdf = await renderStudyPdf({ ...study, unlocked: true }, { name: b.name, email: b.email, company: b.company || null, phone: b.phone || null });
       await sendEmail({
         to: b.email, template: 'estudio_solar', subject: `Tu estudio energético ${b.code} — Energy Solutions Ecuador`,
-        attachments: [{ filename: `Estudio-${b.code}.pdf`, content: pdf }],
+        attachments: [{ filename: `Estudio-${b.code}.pdf`, content: pdf }], attachmentRefs: [{ kind: 'study_pdf', code: b.code }],
         html: `<div style="font-family:Arial,sans-serif;color:#282626"><h2>Hola ${esc(b.name)},</h2><p>Adjuntamos tu estudio de prefactibilidad solar <b>${b.code}</b>.</p>
           <p>Sistema recomendado: <b>${fmtKwp(r.sizing.kwp)}</b> · Inversión estimada: <b>${fmtUsd(base.capex.total)}</b> · Ahorro año 1: <b>${fmtUsd(base.savingYear1)}</b></p>
           <p><a href="${link}">Ver el estudio en línea</a></p><p style="color:#666;font-size:12px">${esc(r.disclaimer)}</p>

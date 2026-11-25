@@ -1,39 +1,57 @@
 import 'server-only';
 import { getStore } from '../data/store';
+import type { AttachmentRef } from '../data/types';
+import { afterFailure, isRetryable } from './followup';
 
 type Attachment = { filename: string; content: Buffer };
+export const emailProviderConfigured = () => !!process.env.RESEND_API_KEY;
+
+/** Envío directo por Resend. Lanza Error si falla. Lo usan sendEmail y el reintento de la cola. */
+export async function deliverEmail(m: { to: string; subject: string; html: string; attachments?: Attachment[] }) {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) throw new Error('RESEND_API_KEY no configurada');
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: process.env.EMAIL_FROM ?? 'Energy Solutions Ecuador <estudios@energysolec.com>',
+      to: [m.to], subject: m.subject, html: m.html,
+      attachments: m.attachments?.map((a) => ({ filename: a.filename, content: a.content.toString('base64') })),
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!r.ok) throw new Error(`Resend ${r.status}: ${(await r.text()).slice(0, 300)}`);
+}
 
 /**
- * Correo transaccional vía Resend. Si no hay clave, el mensaje queda en cola (outbound_messages)
- * como "pendiente" para no perder la comunicación. Los correos de marketing exigen consentimiento.
+ * Correo vía Resend. Si falla o no hay proveedor, queda en la cola (outbound_messages) con su cuerpo para que la tarea
+ * programada lo reintente (/api/cron), salvo los correos con enlaces de acceso (ver isRetryable). Los adjuntos no se
+ * guardan: se indican con `attachmentRefs` y se regeneran al reintentar. Los correos de marketing exigen consentimiento.
  */
-export async function sendEmail(opts: { to: string; subject: string; html: string; template: string; attachments?: Attachment[]; marketing?: boolean }) {
+export async function sendEmail(opts: { to: string; subject: string; html: string; template: string; attachments?: Attachment[]; attachmentRefs?: AttachmentRef[]; marketing?: boolean }) {
   const store = getStore();
+  const base = { channel: 'email' as const, to: opts.to, template: opts.template, is_marketing: !!opts.marketing };
   if (opts.marketing && !(await store.hasMarketingConsent(opts.to))) {
-    await store.queueMessage({ channel: 'email', to: opts.to, template: opts.template, payload: { subject: opts.subject }, status: 'bloqueado_sin_consentimiento' });
+    await store.queueMessage({ ...base, payload: { subject: opts.subject }, status: 'bloqueado_sin_consentimiento' });
     return { sent: false, reason: 'sin_consentimiento' as const };
   }
-  const key = process.env.RESEND_API_KEY;
-  if (!key) {
-    await store.queueMessage({ channel: 'email', to: opts.to, template: opts.template, payload: { subject: opts.subject }, status: 'pendiente', error: 'RESEND_API_KEY no configurada' });
+  const retry = isRetryable(opts.template);
+  const body = { subject: opts.subject, html: opts.html, ...(opts.attachmentRefs?.length ? { attachments: opts.attachmentRefs } : {}) };
+  if (!emailProviderConfigured()) {
+    await store.queueMessage(retry
+      ? { ...base, payload: body, status: 'pendiente', error: 'RESEND_API_KEY no configurada', next_attempt_at: new Date().toISOString() }
+      : { ...base, payload: { subject: opts.subject }, status: 'error', error: 'RESEND_API_KEY no configurada (enlace de acceso: no se guarda)' });
     return { sent: false, reason: 'sin_proveedor' as const };
   }
   try {
-    const r = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: process.env.EMAIL_FROM ?? 'Energy Solutions Ecuador <estudios@energysolec.com>',
-        to: [opts.to], subject: opts.subject, html: opts.html,
-        attachments: opts.attachments?.map((a) => ({ filename: a.filename, content: a.content.toString('base64') })),
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!r.ok) throw new Error(`Resend ${r.status}: ${await r.text()}`);
-    await store.queueMessage({ channel: 'email', to: opts.to, template: opts.template, payload: { subject: opts.subject }, status: 'enviado' });
+    await deliverEmail(opts);
+    await store.queueMessage({ ...base, payload: { subject: opts.subject }, status: 'enviado', attempts: 1 });
     return { sent: true as const };
   } catch (e) {
-    await store.queueMessage({ channel: 'email', to: opts.to, template: opts.template, payload: { subject: opts.subject }, status: 'error', error: String(e) });
+    const next = afterFailure(1, Date.now());
+    await store.queueMessage(retry
+      ? { ...base, payload: body, status: next.status, error: String(e).slice(0, 500), attempts: 1, next_attempt_at: next.status === 'pendiente' ? next.next_attempt_at : null }
+      : { ...base, payload: { subject: opts.subject }, status: 'error', error: String(e).slice(0, 500), attempts: 1 });
     return { sent: false, reason: 'error' as const };
   }
 }

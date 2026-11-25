@@ -6,11 +6,12 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { CalcParams, DEFAULT_PARAMS } from '../engine/params';
 import { DEFAULT_TARIFFS } from '../engine/default-tariffs';
 import type { Tariff } from '../engine/tariff';
-import type { Activity, BlogPost, BlogPostInput, BlogPostRecord, Brand, BrandAssetKind, BrandInput, BrandRecord, Consent, ContentBlockRow, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, ServiceInput, ServiceRow, StaffUser, StaffUserInput, Stat, Study, TierPrice, MediaBucket, BillUpload, PriceTier, TradeAccount, TradeApplicationInput, TradeReview } from './types';
+import type { Activity, BlogPost, BlogPostInput, BlogPostRecord, Brand, BrandAssetKind, BrandInput, BrandRecord, Consent, ContentBlockRow, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, ServiceInput, ServiceRow, StaffUser, StaffUserInput, Stat, Study, TierPrice, MediaBucket, BillUpload, PriceTier, TradeAccount, TradeApplicationInput, TradeReview, OutboundMessage, MessagePayload, CronRun } from './types';
 import { PAID_STATES } from './types';
 import { SEED_BRANDS, SEED_PRODUCTS, SEED_PROJECTS, SEED_STATS } from './seed';
 import { effectivePrice } from '../services/catalog';
 import { productPricing } from '../services/trade';
+import type { ReminderLead } from '../services/followup';
 import { toPublicProject } from '../services/projects';
 import { toPublicBrand } from '../services/brands';
 import { isLive, toPublicPost } from '../services/blog';
@@ -141,7 +142,26 @@ export interface Store {
   resolveMedia(ids: string[]): Promise<Record<string, MediaRef>>;
   getSetting<T>(key: string, fallback: T): Promise<T>;
   saveSetting(key: string, value: unknown, actor: string): Promise<void>;
-  queueMessage(m: { channel: 'email' | 'whatsapp'; to: string; template: string; payload: unknown; status: string; error?: string }): Promise<void>;
+  /** Registra un mensaje en la cola. Con `status: 'pendiente'` y `next_attempt_at`, la tarea programada lo reintenta. */
+  queueMessage(m: { channel: 'email' | 'whatsapp'; to: string; template: string; payload: MessagePayload; status: OutboundMessage['status']; error?: string; is_marketing?: boolean; attempts?: number; next_attempt_at?: string | null }): Promise<void>;
+  /** Reserva mensajes vencidos (no los toma otra ejecución durante 5 min) y cuenta el intento. */
+  claimDueMessages(limit: number): Promise<OutboundMessage[]>;
+  /** Resultado de un intento. `clearBody` borra el cuerpo guardado (al enviarse o al quedar en error definitivo). */
+  finishMessage(id: string, r: { status: OutboundMessage['status']; error?: string | null; next_attempt_at?: string | null; clearBody?: boolean }): Promise<void>;
+  /** Para el panel: sin el cuerpo del correo. */
+  listMessages(f?: { status?: OutboundMessage['status']; limit?: number }): Promise<OutboundMessage[]>;
+  messageStats(): Promise<Record<OutboundMessage['status'], number> & { sent7d: number }>;
+  /** Vuelve a poner en cola un mensaje en error que conserva su cuerpo. false si no se puede. */
+  requeueMessage(id: string): Promise<boolean>;
+  // ---- Recordatorios y depuración (tareas programadas)
+  listLeadsForReminders(): Promise<ReminderLead[]>;
+  markLeadReminders(u: { id: string; reminded_for?: string; uncontacted?: boolean }[]): Promise<void>;
+  /** Borra planillas (archivo y fila) sin lead creadas antes de `before`. Devuelve cuántas. */
+  purgeBillUploads(before: string): Promise<number>;
+  pruneRateLimits(): Promise<number>;
+  startCronRun(trigger: CronRun['trigger'], actor: string | null): Promise<string>;
+  finishCronRun(id: string, r: { ok: boolean; summary: Record<string, unknown>; error?: string | null }): Promise<void>;
+  listCronRuns(limit?: number): Promise<CronRun[]>;
   track(name: string, props?: Record<string, unknown>): Promise<void>;
   countEvents(name: string, sinceDays: number): Promise<number>;
   rateLimit(bucket: string, max: number, windowSec: number): Promise<boolean>;
@@ -154,7 +174,7 @@ const pad = (n: number) => String(n).padStart(6, '0');
 type DevDb = {
   params: CalcParams[]; tariffs: Tariff[]; studies: Study[]; leads: Lead[]; activities: Activity[];
   consents: (Consent & { email: string; at: string })[]; products: DevProduct[]; orders: Order[]; stats: Stat[];
-  projects: DevProject[]; brands: DevBrand[]; messages: unknown[]; events: { name: string; at: string; props?: unknown }[];
+  projects: DevProject[]; brands: DevBrand[]; messages: OutboundMessage[]; events: { name: string; at: string; props?: unknown }[];
   seq: { study: number; order: number }; rl: Record<string, { c: number; t: number }>;
   media: { id: string; bucket: string; path: string; kind: 'image' | 'document'; alt: string | null; created_at: string }[];
   content_blocks: ContentBlockRow[];
@@ -164,6 +184,7 @@ type DevDb = {
   settings: Record<string, unknown>;
   bills: (BillUpload & { path: string; mime: string })[];
   trade: DevTrade[];
+  cron_runs: CronRun[];
 };
 /** Cuenta comercial en el archivo local: contraseña scrypt y token de acceso guardado solo como hash. */
 type DevTrade = Omit<TradeAccount, 'activated'> & { approved_by: string | null; password_hash?: string; token_hash?: string; token_expires?: number };
@@ -229,6 +250,17 @@ function devIssueToken(u: { token_hash?: string; token_expires?: number }) {
   u.token_hash = sha256(token); u.token_expires = Date.now() + 24 * 3600e3;
   return token;
 }
+function devLegacyMessage(m: unknown): OutboundMessage {
+  const o = m as { channel?: 'email' | 'whatsapp'; to?: string; template?: string; payload?: MessagePayload; status?: string; error?: string; at?: string };
+  const status = o.status === 'pendiente' ? 'error' : ((o.status ?? 'error') as OutboundMessage['status']);
+  return {
+    id: randomUUID(), channel: o.channel ?? 'email', to_address: o.to ?? '', template: o.template ?? '', payload: { subject: o.payload?.subject ?? '' },
+    is_marketing: false, status, error: o.status === 'pendiente' ? `${o.error ?? ''} · sin cuerpo guardado (anterior a 0007)` : o.error ?? null,
+    attempts: 0, created_at: o.at ?? new Date().toISOString(), sent_at: status === 'enviado' ? o.at ?? null : null, next_attempt_at: null, last_attempt_at: null,
+  };
+}
+const withoutBody = (m: OutboundMessage): OutboundMessage => ({ ...m, payload: { subject: m.payload?.subject ?? '', has_body: !!m.payload?.html } });
+const EMPTY_STATS = { pendiente: 0, enviado: 0, error: 0, bloqueado_sin_consentimiento: 0 };
 const devTradeOut = (t: DevTrade): TradeAccount => {
   const { password_hash, token_hash: _t, token_expires: _e, ...rest } = t;
   return { ...rest, activated: !!password_hash };
@@ -302,12 +334,14 @@ async function devLoad(): Promise<DevDb> {
   // Solo se crea una base nueva si el archivo no existe: un JSON dañado se reporta, nunca se sobrescribe con la semilla.
   if (raw != null) {
     const db = JSON.parse(raw) as DevDb;
-    db.media ??= []; db.content_blocks ??= []; db.services ??= []; db.posts ??= []; db.users ??= []; db.settings ??= {}; db.bills ??= []; db.trade ??= [];
+    db.media ??= []; db.content_blocks ??= []; db.services ??= []; db.posts ??= []; db.users ??= []; db.settings ??= {}; db.bills ??= []; db.trade ??= []; db.cron_runs ??= [];
+    // Mensajes de archivos anteriores (sin id ni cuerpo): no se pueden reintentar.
+    db.messages = (db.messages ?? []).map((m) => (m as Partial<OutboundMessage>).id ? m : devLegacyMessage(m));
     devState.cache = db;
   }
   else {
     devState.cache = { params: [{ ...DEFAULT_PARAMS, version: 1 }], tariffs: DEFAULT_TARIFFS.map((t) => ({ ...t, id: randomUUID() })), studies: [], leads: [], activities: [], consents: [],
-      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [], posts: [], users: [], settings: {}, bills: [], trade: [] };
+      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [], posts: [], users: [], settings: {}, bills: [], trade: [], cron_runs: [] };
     await devSave();
   }
   return devState.cache!;
@@ -587,7 +621,59 @@ const devStore: Store = {
   resolveMedia: (ids) => tx((db) => Object.fromEntries(ids.map((id) => [id, devMediaRef(db, id)] as const).filter((e): e is [string, MediaRef] => !!e[1]))),
   getSetting: (key, fallback) => tx((db) => (key in db.settings ? structuredClone(db.settings[key]) : fallback) as typeof fallback),
   saveSetting: (key, value) => tx((db) => { db.settings[key] = structuredClone(value); }),
-  queueMessage: (m) => tx((db) => { db.messages.push({ ...m, at: new Date().toISOString() }); }),
+  queueMessage: (m) => tx((db) => {
+    const now = new Date().toISOString();
+    db.messages.push({ id: randomUUID(), channel: m.channel, to_address: m.to, template: m.template, payload: m.payload, is_marketing: !!m.is_marketing, status: m.status,
+      error: m.error ?? null, attempts: m.attempts ?? 0, created_at: now, sent_at: m.status === 'enviado' ? now : null, next_attempt_at: m.next_attempt_at ?? null, last_attempt_at: m.attempts ? now : null });
+  }),
+  claimDueMessages: (limit) => tx((db) => {
+    const now = Date.now();
+    const due = db.messages.filter((m) => m.status === 'pendiente' && m.next_attempt_at && Date.parse(m.next_attempt_at) <= now)
+      .sort((a, b) => a.next_attempt_at!.localeCompare(b.next_attempt_at!)).slice(0, limit);
+    for (const m of due) { m.attempts += 1; m.last_attempt_at = new Date(now).toISOString(); m.next_attempt_at = new Date(now + 300e3).toISOString(); }
+    return due.map((m) => ({ ...m }));
+  }),
+  finishMessage: (id, r) => tx((db) => {
+    const m = db.messages.find((x) => x.id === id); if (!m) return;
+    m.status = r.status; m.error = r.error ?? null; m.next_attempt_at = r.next_attempt_at ?? null;
+    if (r.status === 'enviado') m.sent_at = new Date().toISOString();
+    if (r.clearBody) m.payload = { subject: m.payload.subject };
+  }),
+  listMessages: (f) => tx((db) => db.messages.filter((m) => !f?.status || m.status === f.status).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, f?.limit ?? 100).map(withoutBody)),
+  messageStats: () => tx((db) => {
+    const st = { ...EMPTY_STATS, sent7d: 0 };
+    const since = Date.now() - 7 * 86_400e3;
+    for (const m of db.messages) { st[m.status] += 1; if (m.status === 'enviado' && m.sent_at && Date.parse(m.sent_at) >= since) st.sent7d += 1; }
+    return st;
+  }),
+  requeueMessage: (id) => tx((db) => {
+    const m = db.messages.find((x) => x.id === id);
+    if (!m || m.status !== 'error' || !m.payload?.html) return false;
+    Object.assign(m, { status: 'pendiente', attempts: 0, error: null, next_attempt_at: new Date().toISOString() });
+    return true;
+  }),
+  listLeadsForReminders: () => tx((db) => db.leads.filter((l) => !CLOSED_STAGES.includes(l.stage) && (l.next_activity_at || l.stage === 'nuevo')).map((l) => ({ ...l }))),
+  markLeadReminders: (u) => tx((db) => {
+    const now = new Date().toISOString();
+    for (const x of u) { const l = db.leads.find((y) => y.id === x.id); if (!l) continue; if (x.reminded_for) l.next_activity_reminded_for = x.reminded_for; if (x.uncontacted) l.uncontacted_alerted_at = now; }
+  }),
+  purgeBillUploads: async (before) => {
+    const gone = await tx((db) => {
+      const old = db.bills.filter((b) => !b.lead_id && b.created_at < before);
+      db.bills = db.bills.filter((b) => !old.includes(b));
+      return old.map((b) => b.path);
+    });
+    for (const rel of gone) await fs.rm(path.join(DEV_PRIVATE_DIR, rel), { force: true });
+    return gone.length;
+  },
+  pruneRateLimits: () => tx((db) => {
+    const cutoff = Date.now() - 86_400e3; let n = 0;
+    for (const [k, v] of Object.entries(db.rl)) if (v.t < cutoff) { delete db.rl[k]; n++; }
+    return n;
+  }),
+  startCronRun: (trigger, actor) => tx((db) => { const id = randomUUID(); db.cron_runs.push({ id, trigger, actor, started_at: new Date().toISOString(), finished_at: null, ok: null, summary: null, error: null }); return id; }),
+  finishCronRun: (id, r) => tx((db) => { const c = db.cron_runs.find((x) => x.id === id); if (c) Object.assign(c, { finished_at: new Date().toISOString(), ok: r.ok, summary: r.summary, error: r.error ?? null }); db.cron_runs = db.cron_runs.slice(-200); }),
+  listCronRuns: (limit = 20) => tx((db) => [...db.cron_runs].sort((a, b) => b.started_at.localeCompare(a.started_at)).slice(0, limit)),
   track: (name, props) => tx((db) => { db.events.push({ name, props, at: new Date().toISOString() }); if (db.events.length > 5000) db.events.splice(0, 1000); }),
   countEvents: (name, days) => tx((db) => { const since = Date.now() - days * 864e5; return db.events.filter((e) => e.name === name && Date.parse(e.at) >= since).length; }),
   rateLimit: (bucket, max, win) => tx((db) => {
@@ -1100,7 +1186,73 @@ const supabaseStore: Store = {
   async deleteService(id) { must(await sb().from('services').delete().eq('id', id)); },
   async saveSetting(key, value, actor) { must(await sb().from('site_settings').upsert({ key, value, updated_at: new Date().toISOString(), updated_by: isUuid(actor) ? actor : null })); },
   async getSetting(key, fallback) { const r = await sb().from('site_settings').select('value').eq('key', key).maybeSingle(); return (r.data?.value ?? fallback) as any; },
-  async queueMessage(m) { await sb().from('outbound_messages').insert({ channel: m.channel, to_address: m.to, template: m.template, payload: m.payload, status: m.status, error: m.error }); },
+  async queueMessage(m) {
+    await sb().from('outbound_messages').insert({
+      channel: m.channel, to_address: m.to, template: m.template, payload: m.payload, status: m.status, error: m.error, is_marketing: !!m.is_marketing,
+      attempts: m.attempts ?? 0, next_attempt_at: m.next_attempt_at ?? null, last_attempt_at: m.attempts ? new Date().toISOString() : null,
+      sent_at: m.status === 'enviado' ? new Date().toISOString() : null,
+    });
+  },
+  async claimDueMessages(limit) { return must(await sb().rpc('claim_outbound', { p_limit: limit, p_lease_seconds: 300 })) as OutboundMessage[]; },
+  async finishMessage(id, r) {
+    const c = sb();
+    const patch: Record<string, unknown> = { status: r.status, error: r.error ?? null, next_attempt_at: r.next_attempt_at ?? null };
+    if (r.status === 'enviado') patch.sent_at = new Date().toISOString();
+    if (r.clearBody) {
+      const cur = must(await c.from('outbound_messages').select('payload').eq('id', id).maybeSingle()) as { payload: MessagePayload } | null;
+      patch.payload = { subject: cur?.payload?.subject ?? '' };
+    }
+    must(await c.from('outbound_messages').update(patch).eq('id', id));
+  },
+  async listMessages(f) {
+    let q = sb().from('outbound_messages').select('*').order('created_at', { ascending: false }).limit(f?.limit ?? 100);
+    if (f?.status) q = q.eq('status', f.status);
+    return (must(await q) as OutboundMessage[]).map(withoutBody);
+  },
+  async messageStats() {
+    const c = sb();
+    const count = async (status: string) => (await c.from('outbound_messages').select('id', { count: 'exact', head: true }).eq('status', status)).count ?? 0;
+    const [pendiente, enviado, error, bloqueado_sin_consentimiento] = await Promise.all(['pendiente', 'enviado', 'error', 'bloqueado_sin_consentimiento'].map(count));
+    const sent7d = (await c.from('outbound_messages').select('id', { count: 'exact', head: true }).eq('status', 'enviado').gte('sent_at', new Date(Date.now() - 7 * 86_400e3).toISOString())).count ?? 0;
+    return { pendiente, enviado, error, bloqueado_sin_consentimiento, sent7d };
+  },
+  async requeueMessage(id) {
+    if (!isUuid(id)) return false;
+    const c = sb();
+    const cur = must(await c.from('outbound_messages').select('status, payload').eq('id', id).maybeSingle()) as { status: string; payload: MessagePayload } | null;
+    if (!cur || cur.status !== 'error' || !cur.payload?.html) return false;
+    const r = must(await c.from('outbound_messages').update({ status: 'pendiente', attempts: 0, error: null, next_attempt_at: new Date().toISOString() }).eq('id', id).eq('status', 'error').select('id')) as unknown[];
+    return r.length === 1;
+  },
+  async listLeadsForReminders() {
+    const cols = 'id, full_name, company, stage, advisor_id, next_activity_at, next_activity_note, first_contact_at, created_at, source, next_activity_reminded_for, uncontacted_alerted_at';
+    return must(await sb().from('leads').select(cols).not('stage', 'in', `(${CLOSED_STAGES.join(',')})`).or('next_activity_at.not.is.null,stage.eq.nuevo').limit(5000)) as ReminderLead[];
+  },
+  async markLeadReminders(u) {
+    const c = sb(); const now = new Date().toISOString();
+    for (const x of u) {
+      const patch: Record<string, unknown> = {};
+      if (x.reminded_for) patch.next_activity_reminded_for = x.reminded_for;
+      if (x.uncontacted) patch.uncontacted_alerted_at = now;
+      if (Object.keys(patch).length) must(await c.from('leads').update(patch).eq('id', x.id));
+    }
+  },
+  async purgeBillUploads(before) {
+    const c = sb();
+    const rows = must(await c.from('bill_uploads').select('id, storage_path').is('lead_id', null).lt('created_at', before).limit(500)) as { id: string; storage_path: string }[];
+    if (!rows.length) return 0;
+    // Primero el archivo: si falla, la fila queda y se reintenta en la próxima ejecución.
+    const rm = await c.storage.from(BILLS_BUCKET).remove(rows.map((r) => r.storage_path));
+    if (rm.error) throw new Error(`No se pudieron borrar las planillas: ${rm.error.message}`);
+    must(await c.from('bill_uploads').delete().in('id', rows.map((r) => r.id)));
+    return rows.length;
+  },
+  async pruneRateLimits() { return Number(must(await sb().rpc('prune_rate_limits', { p_older_than_seconds: 86_400 }))); },
+  async startCronRun(trigger, actor) {
+    return (must(await sb().from('cron_runs').insert({ trigger, actor: actor && isUuid(actor) ? actor : null }).select('id').single()) as { id: string }).id;
+  },
+  async finishCronRun(id, r) { must(await sb().from('cron_runs').update({ finished_at: new Date().toISOString(), ok: r.ok, summary: r.summary, error: r.error ?? null }).eq('id', id)); },
+  async listCronRuns(limit = 20) { return must(await sb().from('cron_runs').select('*').order('started_at', { ascending: false }).limit(limit)) as CronRun[]; },
   async track(name, props) { await sb().from('events').insert({ name, props, path: (props?.path as string) ?? null }); },
   async countEvents(name, days) { const { count } = await sb().from('events').select('id', { count: 'exact', head: true }).eq('name', name).gte('at', new Date(Date.now() - days * 864e5).toISOString()); return count ?? 0; },
   async rateLimit(bucket, max, win) { const r = await sb().rpc('hit_rate_limit', { p_bucket: bucket, p_max: max, p_window_seconds: win }); return r.error ? true : !!r.data; },

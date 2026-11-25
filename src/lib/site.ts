@@ -8,7 +8,7 @@ export const SITE = {
   whatsappDisplay: '+593 97 965 5095',
   email: 'info@energysolec.com',            // PROVISIONAL: confirmar
   city: 'Guayaquil, Ecuador',                // PROVISIONAL: confirmar dirección oficial
-  privacyPolicyVersion: '2026-11-v2',
+  privacyPolicyVersion: '2026-11-v3',
   brand: { yellow: '#FDC913', graphite: '#282626', blue: '#0082AA' },
 };
 export const waLink = (text: string, phone = SITE.whatsapp) => `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;

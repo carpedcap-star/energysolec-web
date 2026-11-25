@@ -17,6 +17,8 @@ Acceso: `https://www.energysolec.com/admin/login` con el usuario que te asigne e
 | Planillas de clientes | ✓ | ✓ | | sus leads y sin asignar | ✓ | |
 | Cuentas comerciales (ver, rechazar) | ✓ | ✓ | | ✓ | | |
 | Cuentas comerciales (aprobar, suspender) | ✓ | ✓ | | | | |
+| Asignar asesor a un lead | ✓ | ✓ | | | | |
+| Mensajes y tareas | ✓ | ✓ | | | | |
 
 ## CRM
 
@@ -150,6 +152,20 @@ Acceso: `https://www.energysolec.com/admin/login` con el usuario que te asigne e
 - Sus pedidos quedan con el nivel aplicado y vinculados a la cuenta (visible en el pedido y en la ficha de la cuenta). Quien elige «instalador» en el carrito sin cuenta aprobada paga precio final, y el mensaje de WhatsApp lo advierte.
 - **Suspender** corta el acceso a los precios al instante; se puede volver a aprobar. Una solicitud rechazada no se reabre: la empresa puede enviar otra.
 - Para cambiar el nivel de una cuenta aprobada: suspéndela y vuelve a aprobarla con el nuevo nivel.
+
+## Seguimiento y recordatorios
+
+- En la ficha del lead, **Próxima actividad** se indica en hora de Ecuador. La mañana de ese día (07:30) el asesor recibe un resumen por correo con sus actividades del día y las vencidas. Cada actividad se recuerda una vez; si cambias la fecha, se vuelve a recordar.
+- Marca **Actividad realizada** para quitar el recordatorio, o pon una nueva fecha.
+- Los leads nuevos que pasan más de 24 horas sin primer contacto aparecen una vez en el resumen. Los leads sin asesor (o con un asesor desactivado) van al correo comercial (`SALES_NOTIFY_EMAIL`).
+- Gerencia asigna el asesor desde la ficha del lead; el asesor recibe un aviso por correo y queda registrado en el historial.
+
+## Mensajes y tareas
+
+- **Mensajes y tareas** muestra la cola de correos, las últimas ejecuciones de las tareas programadas y si falta configurar el proveedor de correo, la clave de las tareas o el correo comercial.
+- Un correo que falla se reintenta solo a los 5 min, 30 min, 2 h y 12 h. Tras el quinto fallo queda en «Error» y se puede **Reintentar** a mano. Los correos con enlaces de activación no se guardan: si fallan, genera un enlace nuevo desde la ficha del usuario o de la cuenta.
+- Sin proveedor de correo, los correos esperan en cola hasta que se configure; los resúmenes de seguimiento vencen a las 20 horas y el resto a los 3 días.
+- Las tareas corren solas cada mañana. **Ejecutar tareas ahora** las lanza al momento: reintento de correos, recordatorios y depuración (planillas sin lead de más de 7 días).
 
 ## Otros datos
 

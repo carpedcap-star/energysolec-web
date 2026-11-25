@@ -24,6 +24,8 @@ export type Lead = {
   source: LeadSource; utm: Record<string, string>; stage: LeadStage; advisor_id?: string | null;
   next_activity_at?: string | null; next_activity_note?: string | null; notes?: string | null;
   first_contact_at?: string | null; created_at: string;
+  /** Recordatorios (0007): actividad ya recordada y alerta de lead sin contactar. */
+  next_activity_reminded_for?: string | null; uncontacted_alerted_at?: string | null;
 };
 
 export type Study = {
@@ -90,6 +92,20 @@ export type TradeAccount = {
 };
 export type TradeApplicationInput = Pick<TradeAccount, 'company' | 'ruc' | 'tier' | 'contact_name' | 'email' | 'phone' | 'city' | 'notes'>;
 export type TradeReview = { status: 'aprobada' | 'rechazada' | 'suspendida'; tier: 'instalador' | 'distribuidor'; review_note: string };
+
+/** Adjunto que se regenera al reintentar (los PDF no se guardan en la cola). */
+export type AttachmentRef = { kind: 'study_pdf'; code: string };
+/** Cuerpo guardado para reintentar; se borra al enviarse. `has_body` solo en listados del panel. */
+export type MessagePayload = { subject: string; html?: string; attachments?: AttachmentRef[]; has_body?: boolean };
+export type OutboundMessage = {
+  id: string; channel: 'email' | 'whatsapp'; to_address: string; template: string; payload: MessagePayload; is_marketing: boolean;
+  status: 'pendiente' | 'enviado' | 'error' | 'bloqueado_sin_consentimiento'; error: string | null; attempts: number;
+  created_at: string; sent_at: string | null; next_attempt_at: string | null; last_attempt_at: string | null;
+};
+export type CronRun = {
+  id: string; trigger: 'cron' | 'panel'; actor: string | null; started_at: string; finished_at: string | null;
+  ok: boolean | null; summary: Record<string, unknown> | null; error: string | null;
+};
 
 export type Stat = { id: string; label: string; value: number; unit: string | null; source_note: string; verified: boolean; sort: number };
 export type Project = {
