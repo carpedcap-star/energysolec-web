@@ -33,25 +33,38 @@ CI corre lo mismo en cada push y cada pull request (trabajo «Integración con S
 
 ## 2. Proyecto de producción
 
-1. **Crear el proyecto** en supabase.com (región `us-east-1` o la más cercana a Ecuador) y vincularlo:
+Probado de punta a punta sobre la pila local con estos mismos archivos. Ejecuta los comandos desde la carpeta del repositorio.
+
+1. **Autenticar la CLI**: `npx supabase@2.122.1 login` (abre el navegador; el token queda en el llavero del sistema, no en el historial). No pegues tokens ni la contraseña de la base en comandos (`-p`, `--password`): deja que la CLI te los pida.
+2. **Vincular y migrar**:
    ```bash
-   supabase link --project-ref <ref>
-   supabase db push          # aplica supabase/migrations/* en orden
+   npx supabase@2.122.1 link --project-ref <ref>      # pide la contraseña de la base
+   npx supabase@2.122.1 db push --dry-run             # debe listar 0001 … 0010
+   npx supabase@2.122.1 db push
    ```
-   Nunca edites una migración ya aplicada: crea la siguiente.
-2. **Datos iniciales**: `supabase/seed.sql` trae tarifas, parámetros y contenido PROVISIONALES (marcados como tales). Cárgalo una sola vez: `psql "$DATABASE_URL" -f supabase/seed.sql`.
-3. **Auth** (*Authentication → Sign In / Providers*):
-   - **Desactiva «Allow new users to sign up».** Todos los usuarios los crea el servidor: invitaciones del panel y aprobación de cuentas comerciales. Deja **activo** el proveedor *Email*: es el inicio de sesión con correo y contraseña.
-   - Contraseña mínima: 10 caracteres (la aplicación también lo exige).
-   - Los correos de invitación y recuperación los envía la aplicación (Resend) con su propio enlace; no hace falta configurar las plantillas de correo de Supabase.
-4. **Primer superadministrador**: crea el usuario en *Authentication → Users* (con contraseña) y luego:
+   No uses `--include-seed` (cargaría `supabase/seed.sql`, que es de desarrollo) ni `supabase config push` (subiría la configuración LOCAL de `config.toml`, con URLs de localhost).
+3. **Datos iniciales**: pega el contenido de `supabase/seed.production.sql` en *SQL Editor* y ejecútalo **una vez**. Carga parámetros y tarifas provisionales, categorías, marcas sin publicar, indicadores sin verificar y proyectos sin publicar; no carga contacto ni identidad (se configuran en el panel). Si se ejecuta de nuevo, se niega.
+4. **Auth** (*Authentication → Sign In / Providers*): desactiva **«Allow new users to sign up»** y deja **activo** el proveedor *Email*. Opcional: contraseña mínima de 10 (la aplicación ya la exige).
+5. **Primer superadministrador**: *Authentication → Users → Add user → Create new user*, con correo, contraseña y **Auto Confirm User** marcado. Luego, en *SQL Editor*:
    ```sql
-   insert into profiles (id, full_name, email, role) values ('<uuid-del-usuario>', 'Nombre', 'correo@energysolec.com', 'superadmin');
+   insert into public.profiles (id, email, full_name, role, active, is_advisor)
+   select id, email, 'Nombre Apellido', 'superadmin', true, false from auth.users where email = 'correo@energysolec.com'
+   returning email, role;
    ```
    El resto del equipo se invita desde el panel (**Usuarios**).
-5. **Storage**: las migraciones crean los buckets (`public-media` público; `private-docs`, `bills` y `project-docs` privados) con sus límites y políticas. No los cambies a públicos.
-6. **Variables en Vercel**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY` (esta última **solo** servidor, nunca con prefijo `NEXT_PUBLIC_`).
-7. **Copias de seguridad**: activa *Point-in-Time Recovery* (plan Pro) o programa un `pg_dump` diario.
+6. **Claves propias** para `APP_SECRET` e `IP_HASH_SALT`, generadas en tu computadora y pegadas directamente en Vercel (marcadas como *Sensitive*), nunca en un chat ni en el repositorio:
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+   ```
+   Una ejecución por variable. Cambiar `APP_SECRET` invalida los enlaces de estudios ya enviados: hazlo antes de publicar.
+7. **Verificación** (solo lectura; no escribe nada ni muestra las claves):
+   ```bash
+   NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_... SUPABASE_SERVICE_ROLE_KEY=sb_secret_... node scripts/verificar-produccion.mjs
+   ```
+   Revisa migraciones, que la clave pública no vea datos privados, buckets privados, registros desactivados, superadministrador y datos iniciales. Debe terminar en «✓ Lista para el primer despliegue»; los avisos (parámetros y tarifas provisionales) se resuelven luego desde el panel.
+8. **Copias de seguridad**: activa *Point-in-Time Recovery* (plan Pro) o programa un `pg_dump` diario.
+
+Variables en Vercel: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (clave `sb_publishable_…`) y `SUPABASE_SERVICE_ROLE_KEY` (clave `sb_secret_…`, **solo servidor**). Las claves nuevas de Supabase funcionan con estos mismos nombres (probado).
 
 ## 3. Cómo atribuye la base los cambios del panel
 
