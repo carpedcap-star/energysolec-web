@@ -149,6 +149,16 @@ Además:
 - **Recomendación:** la que mejor cumple el objetivo del cliente, con una explicación generada desde reglas.
 - **Alternativas no aplicables:** se omiten con su motivo (p. ej. «Off Grid no recomendado: requiere 3,2 veces la superficie disponible»).
 
+### 3.9.1 Indicadores de cada alternativa (spec §11)
+
+Cada alternativa muestra:
+- **Técnicos:** potencia FV, módulos, kWh de batería (nominal y útil), potencia de inversores, superficie requerida, generación anual, cobertura energética y autonomía.
+- **Económicos:**
+  - ahorro mensual y anual, facturación residual (por rubros), inversión estimada y mantenimiento anual;
+  - **retorno simple** (solo si hay factura o alternativa comparable), VAN, TIR, flujo de caja a 25 años y reposiciones con su año y costo;
+  - Off Grid sin referencia: costo de la energía suministrada y confiabilidad.
+- **Limitaciones** visibles, más las etiquetas de objetivo y la explicación de la recomendación.
+
 ### 3.10 Lectura de planillas v2
 - **Entrada:** varios archivos (PDF digital o escaneado, fotos, varias páginas), ≤ 4 MB cada uno por el límite de Vercel; el navegador reduce las fotos. Claude lee PDF e imágenes directamente: no hace falta un servicio de OCR aparte.
 - **Esquema ampliado:** cada campo trae `{ valor, página, texto de respaldo, confianza }`.
@@ -202,8 +212,10 @@ study_alternatives        study_id, technology, feasible, reason, sizing jsonb, 
 study_costs_internal      alternative_id, cost_book_version, breakdown jsonb, margin jsonb   -- RLS estricta
 solar_studies (existente) + engine_version, objectives jsonb, snapshots jsonb (tarifa, recurso, equipos, parámetros)
 
-opportunities             lead_id, study_id, stage, technology, kwp, kwh, price_estimate, saving_estimate,
-                          autonomy_h, restrictions text[], confidence, advisor_id
+opportunities             lead_id, study_id, stage, segment, province, canton, annual_kwh, tariff_code,
+                          usable_area_m2, mounting_types text[], preferred_technology, technology, kwp, kwh,
+                          price_estimate, saving_estimate, autonomy_h, restrictions text[], confidence, advisor_id,
+                          report_path (bucket privado; descarga con URL firmada)
 quotes                    opportunity_id, version, status, items jsonb, created_by    -- propuesta personalizada
                           (vínculo posterior a projects cuando se ejecute)
 ```
@@ -233,6 +245,24 @@ quotes                    opportunity_id, version, status, items jsonb, created_
 Las imágenes de implantación serán **fotos de proyectos propios autorizadas** o **ilustraciones genéricas marcadas
 como ilustrativas**; no se usan fotos de terceros (decisión D8).
 
+### 5.1 Catálogo inicial de implantación (spec §4) y cómo se sugiere sin términos técnicos
+
+| Código | Tipo (panel) | Lo que ve el cliente | Se sugiere cuando el cliente responde… |
+|---|---|---|---|
+| `cubierta_metalica` | Cubierta metálica industrial | «Techo de lámina metálica (galpón, bodega)» | techo de metal · edificio comercial o industrial |
+| `techo_inclinado` | Techo inclinado residencial | «Techo inclinado de casa (teja, fibrocemento, metal)» | techo de casa con pendiente |
+| `cubierta_especial` | Cubierta con fijaciones especiales | «Techo de material frágil o poco común» | material que no sabe identificar o frágil → *validación de Ingeniería* |
+| `losa_anclada` | Losa de hormigón con estructura anclada | «Terraza o losa de cemento» | losa · se pueden perforar anclajes |
+| `losa_lastrada` | Losa de hormigón con estructura lastrada | «Terraza o losa de cemento (sin perforar)» | losa · no se debe perforar (impermeabilización) |
+| `suelo_hincado` | Ground mount con pilotes hincados | «Terreno libre» | terreno · suelo natural sin roca conocida |
+| `suelo_cimentado` | Ground mount con cimentación de hormigón | «Terreno libre» | terreno · roca, relleno o suelo desconocido → *validación* |
+| `carport` | Carport solar | «Parqueadero» | quiere techar un parqueadero |
+| `flotante` | Sistema fotovoltaico flotante | «Reservorio, piscina de agua o laguna» | superficie de agua → *siempre cotización personalizada* |
+| `mixta` | Instalación mixta | (resultado automático) | combina dos o más superficies |
+
+La sugerencia es preliminar y queda marcada «sujeta a validación de Ingeniería». En terreno, el sistema no decide
+entre hincado y cimentado sin estudio de suelo: muestra los dos costos como rango.
+
 ---
 
 ## 6. Cambios necesarios en el repositorio
@@ -251,6 +281,71 @@ como ilustrativas**; no se usan fotos de terceros (decisión D8).
 - **Pruebas:** unitarias, integración Supabase, e2e de escritorio y móvil, y los 25 casos del punto 15 de la especificación, más regresión de estudios existentes.
 
 ---
+
+### 6.1 Informe PDF (spec §12)
+
+Secciones, en este orden:
+1. Portada.
+2. Resumen ejecutivo (recomendación en una página).
+3. Datos leídos de la planilla, con su estado.
+4. Ubicación.
+5. Recurso solar (fuentes y la adoptada).
+6. Análisis del consumo y tarifario (factura por rubros).
+7. Superficies.
+8. Potencias ideal, máxima, óptima y recomendada.
+9. Alternativas y comparación económica.
+10. Baterías.
+11. Generación mensual.
+12. Facturación antes y después.
+13. Flujo a 25 años.
+14. Escenarios conservador, base y optimista.
+15. Impacto ambiental.
+16. Supuestos, limitaciones y fuentes.
+17. Recomendación técnica preliminar.
+18. Llamado a visita técnica.
+
+Cada página lleva: «Estudio preliminar referencial: no constituye oferta contractual».
+
+### 6.2 Seguridad y privacidad (spec §14)
+
+- **Consentimiento:**
+  - privacidad y autorización comercial separadas, como hoy;
+  - un consentimiento específico para la lectura de planillas con IA (ya existe);
+  - otro para la ubicación exacta y los polígonos.
+- **Datos personales:** la IA no transcribe identificadores ni dirección. Coordenadas y polígonos se guardan con el estudio, en tablas sin acceso público.
+- **Archivos:**
+  - planillas, informes y fotos en buckets **privados**, con URL firmadas de corta duración;
+  - validación por firma de archivo (no por extensión), máx. 4 MB por archivo y número máximo de archivos y páginas por carga.
+- **Retención:**
+  - planillas sin lead a los 7 días (como hoy);
+  - estudios y polígonos según la política que fije Gerencia (D9);
+  - borrado a solicitud del titular.
+- **Claves:** solo en el servidor; `NEXT_PUBLIC_` nunca para secretos.
+- **Abuso:** Turnstile, límites por IP, tope diario y mensual de gasto en IA con alerta, y registro de cada lectura (tokens, modelo, costo) en auditoría.
+- **Permisos:**
+  - RLS en todas las tablas nuevas;
+  - costos internos y márgenes solo para Gerencia y superadmin;
+  - validaciones impuestas también en la base.
+- **Funciones:** regla de la migración 0011 (sin EXECUTE público).
+
+### 6.3 Matriz de pruebas (spec §15)
+
+| Caso | Fase | Tipo de prueba |
+|---|---|---|
+| On Grid residencial, comercial e industrial | 4 | Unitaria (motor) + e2e |
+| Híbrido residencial, comercial e industrial | 5 | Unitaria + e2e |
+| Off Grid sin planilla / con historial | 6 | Unitaria + e2e |
+| Superficie insuficiente; superficies mixtas | 4 | Unitaria |
+| Cubierta metálica, losa, hincado, cimentación, carport, flotante | 3, 4, 7 | Unitaria (densidad y costos) |
+| Tarifas horarias; facturación con demanda | 2 | Unitaria contra el pliego y planillas reales |
+| Baterías insuficientes; potencias de arranque; reposición de baterías | 5, 6 | Unitaria |
+| Incompatibilidad de equipos | 3 | Unitaria + integración (rechazo en base) |
+| Mes crítico de generación | 6 | Unitaria con series reales versionadas |
+| Comparación de costos por implantación | 7 | Unitaria |
+| Ausencia de datos críticos | 2, 8 | Unitaria + e2e («no sé» en cada dato) |
+| Seguridad: RLS, márgenes ocultos, URL firmadas, límites | todas | Integración Supabase + verificador 04 |
+| Experiencia: escritorio 1440 px y móvil 390 px, sin desborde, accesibilidad | 8, 9 | e2e |
+| Regresión: estudios v1 sin cambios | 10 | Unitaria + integración |
 
 ## 7. Dependencias
 
