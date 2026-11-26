@@ -33,6 +33,8 @@ const read = { distributor: 'CNEL EP (unidades de negocio)', distributorRaw: 'CN
 const bills = [
   ['11111111-1111-4111-8111-111111111111', d.studies[0]?.id ?? null, d.leads[0].id, { read, confirmed: { monthlyKwh: 14808, monthlyBillUsd: 1500, demandKw: 52 } }, true, now - D],
   ['22222222-2222-4222-8222-222222222222', null, null, { read: { ...read, energyKwh: 320, electricityUsd: 31.4, totalUsd: 35, demandKw: null, distributorRaw: 'Empresa Eléctrica Quito', tariffCategory: 'Residencial', history: [] } }, false, now],
+  // Gemela de la anterior para el reintento automático de CI (una carga se vincula una sola vez).
+  ['22222222-2222-4222-8222-222222222223', null, null, { read: { ...read, energyKwh: 320, electricityUsd: 31.4, totalUsd: 35, demandKw: null, distributorRaw: 'Empresa Eléctrica Quito', tariffCategory: 'Residencial', history: [] } }, false, now],
   ['33333333-3333-4333-8333-333333333333', null, null, { read }, false, now - 10 * D],
 ];
 d.bills = bills.map(([id, study_id, lead_id, extracted, confirmed_by_user, at]) => {

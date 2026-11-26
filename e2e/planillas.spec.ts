@@ -16,11 +16,13 @@ test.describe('planillas eléctricas (sin clave de IA)', () => {
 
   test('una carga confirmada se vincula al estudio y al lead una sola vez', async ({ page, request }, info) => {
     test.skip(isMobile(info), 'escenario de datos de una sola vez: se prueba en escritorio');
-    const study = (o = {}) => ({ mode: 'rapida', segment: 'residencial', objective: 'reducir_factura', province: 'Pichincha', monthlyKwh: 320, monthlyBillUsd: 31.4, billUploadId: '22222222-2222-4222-8222-222222222222', ...o });
+    // En un reintento, la carga del primer intento ya quedó vinculada: se usa su gemela sembrada.
+    const billUploadId = info.retry ? '22222222-2222-4222-8222-222222222223' : '22222222-2222-4222-8222-222222222222';
+    const study = (o = {}) => ({ mode: 'rapida', segment: 'residencial', objective: 'reducir_factura', province: 'Pichincha', monthlyKwh: 320, monthlyBillUsd: 31.4, billUploadId, ...o });
     const s1 = await request.post('/api/study', { data: study() });
     expect(s1.ok()).toBe(true);
     const { code } = await s1.json();
-    const email = `planilla-${tag(info)}@example.com`;
+    const email = `planilla-${tag(info)}-${info.retry}@example.com`;
     expect((await request.post('/api/study/unlock', { data: { code, name: 'Cliente Planilla', email, acceptPrivacy: true, acceptMarketing: false, website: '' } })).ok()).toBe(true);
     expect((await request.post('/api/study', { data: study({ monthlyKwh: 999 }) })).ok()).toBe(true);
     expect((await request.post('/api/study', { data: study({ billUploadId: '../../etc/passwd' }) })).ok()).toBe(true);

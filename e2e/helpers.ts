@@ -14,6 +14,14 @@ export const test = base.extend<{ consoleErrors: string[] }>({
     await context.route(`http://localhost:${E2E.port}/**`, (r) => r.continue({ headers: { ...r.request().headers(), 'x-forwarded-for': ip } }));
     await use(context);
   },
+  // Peticiones directas a la API sin conexiones reutilizadas: con keep-alive, a veces el servidor de desarrollo cierra
+  // el socket justo cuando se reutiliza y la petición falla con ECONNRESET (visto en CI y en local).
+  request: async ({ playwright, baseURL }, use, info) => {
+    const ip = info.project.name === 'movil' ? '203.0.113.20' : '203.0.113.10';
+    const ctx = await playwright.request.newContext({ baseURL, extraHTTPHeaders: { connection: 'close', 'x-forwarded-for': ip } });
+    await use(ctx);
+    await ctx.dispose();
+  },
   consoleErrors: [async ({ page }, use) => {
     const errs: string[] = [];
     page.on('pageerror', (e) => errs.push(e.message));
