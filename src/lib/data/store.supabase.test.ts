@@ -220,6 +220,34 @@ describe.skipIf(!run)('almacén Supabase (integración)', () => {
     expect(r.error?.message ?? '').toMatch(/sign.?ups? (are )?(not allowed|disabled)/i);
   });
 
+  it('funciones del servidor: solo la clave de servicio las invoca; límite de solicitudes y asesor siguen funcionando', async () => {
+    // Usuario del panel con sesión real (rol authenticated en la API).
+    const user = createClient(URL_!, ANON!, { auth: { persistSession: false } });
+    expect((await user.auth.signInWithPassword({ email: `ventas-${U}@it.test`, password: `Clave-${U}-2026` })).error).toBeNull();
+    const calls: [string, Record<string, unknown>][] = [
+      ['hit_rate_limit', { p_bucket: `it-${U}`, p_max: 1, p_window_seconds: 60 }], ['next_advisor', {}],
+      ['claim_outbound', { p_limit: 1, p_lease_seconds: 1 }], ['prune_rate_limits', { p_older_than_seconds: 2_000_000_000 }],
+      ['app_actor', {}], ['actor_role_is', { roles: ['superadmin'] }],
+    ];
+    for (const [fn, args] of calls) for (const [who, c] of [['anon', anon], ['authenticated', user]] as const) {
+      const r = await c.rpc(fn, args);
+      expect(r.error, `${who} no debe poder invocar ${fn}`).not.toBeNull();
+      expect(r.error?.code, `${who} → ${fn}`).toBe('42501');
+    }
+    expect((await admin.rpc('next_advisor')).error).toBeNull();
+    // current_role_is sigue disponible para las políticas RLS: el usuario lee su propio perfil.
+    expect((await user.rpc('current_role_is', { roles: ['ventas'] })).data).toBe(true);
+    expect((await user.from('profiles').select('id').eq('id', ventas)).data).toHaveLength(1);
+    // El límite de solicitudes del servidor sigue bloqueando (falla abierto ante error: aquí debe bloquear de verdad).
+    const bucket = `it-limite-${U}`;
+    expect([await store.rateLimit(bucket, 2, 60), await store.rateLimit(bucket, 2, 60), await store.rateLimit(bucket, 2, 60)]).toEqual([true, true, false]);
+    // Asignación automática de asesor al crear un lead.
+    const lead = await store.createLead({ full_name: `Lead asesor ${U}`, email: `asesor-${U}@it.test`, source: 'contacto', utm: {} },
+      [{ purpose: 'privacidad_servicio', granted: true }], { ipHash: 'x', ua: 'it', policyVersion: 'it' });
+    expect(lead.advisor_id).toBeTruthy();
+    await user.auth.signOut();
+  });
+
   it('usuarios del panel', async () => {
     const u = await store.createUser({ full_name: 'Nuevo IT', email: `nuevo-${U}@it.test`, phone: null, role: 'marketing', is_advisor: false });
     expect(u.token_hash).toBeTruthy();

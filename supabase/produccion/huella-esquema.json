@@ -33,19 +33,19 @@
   "trade_accounts.t_guard_trade": "f7f921d1b9f2832552bd6c3f2a6c29f5"
  },
  "funciones": {
-  "actor_role_is(roles app_role[])": "17d7b8f176fbaa564bdc8d86b31c9ca0 | anon=false | authenticated=false",
-  "app_actor()": "b6b5bc8026039dc360f1ae6120fa07d4 | anon=false | authenticated=false",
-  "audit_trigger()": "c9d041f2d35ce302a4fb7a5d071412f9 | anon=true | authenticated=true",
-  "claim_outbound(p_limit integer, p_lease_seconds integer)": "80b264b5fa1458b1474421c389cebff9 | anon=false | authenticated=false",
-  "current_role_is(roles app_role[])": "93847f6529799af004592829be6b5066 | anon=true | authenticated=true",
-  "guard_payment_verification()": "f8599f2e3493d250524ee8502a54818f | anon=true | authenticated=true",
-  "guard_trade_account()": "490baebffffa5a7b517b1f6353f6c097 | anon=true | authenticated=true",
-  "hit_rate_limit(p_bucket text, p_max integer, p_window_seconds integer)": "92093bc75607beea1c6ae2f8bb225631 | anon=true | authenticated=true",
-  "log_lead_stage()": "f817279def40cb0dceb239aed9fa2882 | anon=true | authenticated=true",
-  "log_order_status()": "665f7847655eb50097e293f31d5777fc | anon=true | authenticated=true",
-  "next_advisor()": "b7db1954a7d07f2d855ad7c18dc14429 | anon=true | authenticated=true",
-  "prune_rate_limits(p_older_than_seconds integer)": "6c2a03064888831505b0afc174fefec5 | anon=false | authenticated=false",
-  "touch_updated_at()": "0e2598a6684a7b330edb0d3ab6128a9f | anon=true | authenticated=true"
+  "actor_role_is(roles app_role[])": "f3b08ec0324c16dddd3b36a7069e3a9a | propietario=postgres | ejecutan=service_role",
+  "app_actor()": "ecd878dfeb39e6adc11e2d8a03562ee1 | propietario=postgres | ejecutan=service_role",
+  "audit_trigger()": "66a672942293526537b43c599e2dc1c1 | propietario=postgres | ejecutan=",
+  "claim_outbound(p_limit integer, p_lease_seconds integer)": "ccad7f2022587ad1af5bbb504f06d45f | propietario=postgres | ejecutan=service_role",
+  "current_role_is(roles app_role[])": "e7f04e5aa937858fb372da5c1c0e3514 | propietario=postgres | ejecutan=PUBLIC,anon,authenticated,service_role",
+  "guard_payment_verification()": "4da99f8d615832964c947c71e91b7983 | propietario=postgres | ejecutan=",
+  "guard_trade_account()": "490baebffffa5a7b517b1f6353f6c097 | propietario=postgres | ejecutan=",
+  "hit_rate_limit(p_bucket text, p_max integer, p_window_seconds integer)": "d0aa29e09a50c8631979beda02c1f7d2 | propietario=postgres | ejecutan=service_role",
+  "log_lead_stage()": "6557fe38a5556574c189366d39619af1 | propietario=postgres | ejecutan=",
+  "log_order_status()": "2b6f7d4ba1872a7f823e74fe674c5bd6 | propietario=postgres | ejecutan=",
+  "next_advisor()": "38c4f3db0e7a38a57857539e97325823 | propietario=postgres | ejecutan=service_role",
+  "prune_rate_limits(p_older_than_seconds integer)": "1f2b51f48effbe107cbe194b41549230 | propietario=postgres | ejecutan=service_role",
+  "touch_updated_at()": "0e2598a6684a7b330edb0d3ab6128a9f | propietario=postgres | ejecutan="
  },
  "indices": {
   "audit_log_pkey": "699c2e83d7415b2bc46801f073cacbb8",
@@ -121,6 +121,12 @@
   "trade_accounts_ruc_live": "66f3a422b26449398cd9456e188a4fbe",
   "trade_accounts_status_idx": "4885a22442ac053bfc87f314083e69c3",
   "trade_accounts_user_id_key": "8de0f67229652f65bc7d91ef165dfedf"
+ },
+ "opcionales": {
+  "ensure_rls": "ddl_command_end | rls_auto_enable() | activo=true | CREATE TABLE, CREATE TABLE AS, SELECT INTO | propietario=postgres",
+  "funciones": {
+   "rls_auto_enable()": "846ec2fbff751d24b890656d63c3a9bf | propietario=postgres | ejecutan=PUBLIC,anon,authenticated,service_role"
+  }
  },
  "politicas": {
   "public.audit_log.staff_read": "39d4b9bb7d1cfa7888c0bbe2de283445",

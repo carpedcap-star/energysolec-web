@@ -25,7 +25,7 @@ const check = (cond, m, detail = '') => (cond ? ok(m) : bad(detail ? `${m} — $
 
 console.log(`\nProyecto: ${new URL(URL_).host}\n`);
 
-// 1. Esquema: todas las tablas de las migraciones 0001–0010
+// 1. Esquema: todas las tablas de las migraciones
 console.log('1. Migraciones');
 const TABLES = ['profiles', 'audit_log', 'site_settings', 'content_blocks', 'media', 'company_stats', 'seo_meta', 'brands', 'brand_assets', 'services', 'projects', 'project_media',
   'product_categories', 'products', 'product_prices', 'product_relations', 'trade_accounts', 'leads', 'lead_activities', 'consents', 'tariffs', 'calc_params', 'solar_resource_cache',
@@ -38,6 +38,8 @@ const cols = [['trade_accounts', 'status'], ['outbound_messages', 'next_attempt_
 for (const [t, c] of cols) { const r = await admin.from(t).select(c).limit(1); check(!r.error, `columna ${t}.${c}`, r.error?.message); }
 const actor = await admin.rpc('app_actor');
 check(!actor.error && actor.data === null, 'migración 0010: app_actor() existe (sin actor con la clave de servicio)', actor.error?.message);
+const advisor = await admin.rpc('next_advisor');
+check(!advisor.error, 'migración 0011: next_advisor() disponible para el servidor', advisor.error?.message);
 
 // 2. RLS: la clave pública no ve nada privado
 console.log('\n2. Seguridad de datos (clave pública)');
@@ -48,8 +50,11 @@ for (const t of PRIVATE) { const r = await anon.from(t).select('*').limit(1); if
 check(!leaks.length, `${PRIVATE.length} tablas privadas sin filas visibles`, `VISIBLES: ${leaks.join(', ')}`);
 const notif = await anon.from('site_settings').select('key').eq('key', 'notifications');
 check(!notif.data?.length, 'el correo de avisos internos no es público');
-const rpc = await anon.rpc('app_actor');
-check(!!rpc.error, 'app_actor() no se puede llamar con la clave pública');
+for (const [fn, args] of [['app_actor', {}], ['hit_rate_limit', { p_bucket: 'verificacion', p_max: 1, p_window_seconds: 1 }], ['next_advisor', {}],
+  ['claim_outbound', { p_limit: 0 }], ['prune_rate_limits', { p_older_than_seconds: 2_000_000_000 }]]) {
+  const r = await anon.rpc(fn, args);
+  check(r.error?.code === '42501', `${fn}() no se puede llamar con la clave pública`, r.error ? r.error.message : 'SE EJECUTÓ: aplica 06_PARCHE_SEGURIDAD_PRODUCCION.sql');
+}
 const tierPrices = await anon.from('product_prices').select('tier').neq('tier', 'final').limit(1);
 check(!tierPrices.data?.length, 'precios de instalador y distribuidor ocultos al público');
 

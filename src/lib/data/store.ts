@@ -1432,7 +1432,11 @@ return {
   },
   async track(name, props) { await sb().from('events').insert({ name, props, path: (props?.path as string) ?? null }); },
   async countEvents(name, days) { const { count } = await sb().from('events').select('id', { count: 'exact', head: true }).eq('name', name).gte('at', new Date(Date.now() - days * 864e5).toISOString()); return count ?? 0; },
-  async rateLimit(bucket, max, win) { const r = await sb().rpc('hit_rate_limit', { p_bucket: bucket, p_max: max, p_window_seconds: win }); return r.error ? true : !!r.data; },
+  async rateLimit(bucket, max, win) {
+    const r = await sb().rpc('hit_rate_limit', { p_bucket: bucket, p_max: max, p_window_seconds: win });
+    // Ante un error de la base se deja pasar (no bloquear clientes reales), pero queda en el registro.
+    if (r.error) console.error(`[límite de solicitudes] hit_rate_limit falló: ${r.error.code} ${r.error.message}`);
+    return r.error ? true : !!r.data; },
 };
 }
 const supabaseStore = supabaseStoreFor(null);

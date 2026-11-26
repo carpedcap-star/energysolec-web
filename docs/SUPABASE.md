@@ -33,7 +33,7 @@ CI corre lo mismo en cada push y cada pull request (trabajo «Integración con S
 
 ## 2. Proyecto de producción
 
-**Sin terminal (solo navegador, también desde el iPhone):** sigue [`supabase/produccion/LEEME.md`](../supabase/produccion/LEEME.md). Cuatro archivos para el SQL Editor (migraciones, datos iniciales, superadministrador y verificación de solo lectura), generados por `scripts/generar-sql-produccion.mjs` y probados sobre una instancia limpia por `scripts/probar-sql-produccion.sh` (también en CI). Si cambias una migración: `supabase db reset --no-seed`, `node scripts/generar-sql-produccion.mjs --huella`, y versiona el resultado.
+**Sin terminal (solo navegador, también desde el iPhone):** sigue [`supabase/produccion/LEEME.md`](../supabase/produccion/LEEME.md). Archivos para el SQL Editor (migraciones, datos iniciales, superadministrador, verificación de solo lectura, parche 06 para el proyecto instalado con 0001–0010 y diagnóstico 07), generados por `scripts/generar-sql-produccion.mjs` y probados por `scripts/probar-sql-produccion.sh` (también en CI) sobre una base limpia que replica Supabase Cloud (`rls_auto_enable`/`ensure_rls`) con los archivos pegados en CR+LF: instalación nueva, actualización desde el estado de producción y detección de alteraciones. Si cambias una migración: `supabase db reset --no-seed`, `node scripts/generar-sql-produccion.mjs --huella`, y versiona el resultado.
 
 **Con terminal:** probado de punta a punta sobre la pila local con estos mismos archivos. Ejecuta los comandos desde la carpeta del repositorio.
 
@@ -41,7 +41,7 @@ CI corre lo mismo en cada push y cada pull request (trabajo «Integración con S
 2. **Vincular y migrar**:
    ```bash
    npx supabase@2.122.1 link --project-ref <ref>      # pide la contraseña de la base
-   npx supabase@2.122.1 db push --dry-run             # debe listar 0001 … 0010
+   npx supabase@2.122.1 db push --dry-run             # debe listar 0001 … 0011
    npx supabase@2.122.1 db push
    ```
    No uses `--include-seed` (cargaría `supabase/seed.sql`, que es de desarrollo) ni `supabase config push` (subiría la configuración LOCAL de `config.toml`, con URLs de localhost).
@@ -76,3 +76,18 @@ El servidor escribe con la clave de servicio, que no tiene usuario. Las acciones
 - **Pagos:** marcar un pedido como «pagado» exige que quien verifica sea el actor y tenga rol de Gerencia o superadministrador.
 
 Las escrituras públicas (formularios, pedidos) y las tareas programadas no tienen actor: quedan como «sin usuario», que es lo correcto.
+
+## 4. Permisos de las funciones (migración 0011)
+
+Postgres concede EXECUTE a PUBLIC en toda función nueva y Supabase además a anon y authenticated (privilegios por defecto del esquema `public`). Por eso **toda función nueva** debe terminar su migración con permisos explícitos:
+
+```sql
+revoke execute on function public.mi_funcion(args) from public, anon, authenticated;
+grant execute on function public.mi_funcion(args) to service_role;   -- si la llama el servidor
+```
+
+- Funciones de disparador: revócalas a todos los roles de la API; Postgres no comprueba EXECUTE al disparar.
+- SECURITY DEFINER: `set search_path = public, pg_temp`.
+- La única SECURITY DEFINER que la API pública puede ejecutar es `current_role_is()`, porque la evalúan las políticas RLS con el rol de quien consulta. Si otra lo necesita de verdad, agrégala a `DEFINER_PUBLICAS` en `scripts/generar-sql-produccion.mjs` y justifícalo; si no, 04 y CI fallan.
+
+No se cambiaron los privilegios por defecto del proyecto: el permiso a PUBLIC solo se puede quitar de forma global (`ALTER DEFAULT PRIVILEGES … REVOKE … FROM PUBLIC` sin esquema), y eso afectaría también a extensiones y funciones que Supabase cree después. La protección es la regla anterior más la verificación automática.
