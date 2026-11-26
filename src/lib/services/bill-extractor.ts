@@ -35,7 +35,8 @@ const FAIL = {
   error: 'No pudimos leer tu planilla en este momento. Ingresa tus datos manualmente.',
 };
 
-export async function extractBill(bytes: Uint8Array, type: SniffedType): Promise<ExtractResult> {
+/** `onUsage` informa los tokens de cada lectura (evaluación con tope de gasto). */
+export async function extractBill(bytes: Uint8Array, type: SniffedType, opts: { onUsage?: (u: { input: number; output: number; model: string }) => void } = {}): Promise<ExtractResult> {
   const client = new Anthropic({ timeout: 90_000, maxRetries: 2 });
   const data = Buffer.from(bytes).toString('base64');
   const file: Anthropic.Beta.Messages.BetaContentBlockParam = type.kind === 'document'
@@ -52,6 +53,7 @@ export async function extractBill(bytes: Uint8Array, type: SniffedType): Promise
       output_config: { effort: 'medium', format: zodOutputFormat(BillExtraction) },
       messages: [{ role: 'user', content: [file, { type: 'text', text: 'Extrae los datos de esta planilla según el esquema.' }] }],
     });
+    opts.onUsage?.({ input: msg.usage.input_tokens + (msg.usage.cache_creation_input_tokens ?? 0) + (msg.usage.cache_read_input_tokens ?? 0), output: msg.usage.output_tokens, model: msg.model });
     if (msg.stop_reason === 'refusal') return { ok: false, reason: 'refused', message: FAIL.refused };
     const out = msg.parsed_output;
     if (!out) { console.error('[planilla] respuesta sin salida estructurada', msg.stop_reason); return { ok: false, reason: 'error', message: FAIL.error }; }

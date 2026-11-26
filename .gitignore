@@ -12,3 +12,4 @@ playwright-report/
 test-results/
 .env.supabase-local
 playwright-report-supabase/
+evals/**/out/
