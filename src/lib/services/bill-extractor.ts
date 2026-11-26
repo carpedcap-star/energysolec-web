@@ -20,7 +20,11 @@ Reglas:
 - No inventes ni estimes cifras: si un valor no aparece o no se lee con claridad, usa null.
 - Los meses van en formato AAAA-MM. Si el historial muestra el mes abreviado sin año, deduce el año a partir del período facturado.
 - Los números van sin separadores de miles ni símbolos; la coma decimal se convierte en punto.
-- electricity_usd es el valor del servicio eléctrico, sin tasas de terceros (recolección de basura, bomberos, alumbrado público si aparece aparte). Si no puedes separarlo, déjalo en null y reporta total_usd.`;
+- electricity_usd es el valor del servicio eléctrico, sin tasas de terceros (recolección de basura, bomberos, alumbrado público si aparece aparte). Si no puedes separarlo, déjalo en null y reporta total_usd.
+- province y canton: solo provincia y cantón o ciudad del suministro. Nunca la dirección, el sector ni referencias.
+- time_of_use: solo si la planilla desglosa el consumo por franjas horarias; copia el nombre y el horario tal como aparecen.
+- charges: cada rubro con su valor; los descuentos, subsidios y créditos van en negativo. Clasifícalos con el tipo más cercano; si dudas, usa «otro».
+- Puede haber varias páginas o una foto torcida: lee todo, pero si un valor no se distingue con claridad, déjalo en null y agrega el nombre del campo a uncertain_fields.`;
 
 export type ExtractResult = { ok: true; data: BillExtraction } | { ok: false; reason: 'unreadable' | 'refused' | 'busy' | 'error'; message: string };
 
@@ -40,7 +44,7 @@ export async function extractBill(bytes: Uint8Array, type: SniffedType): Promise
   try {
     const msg = await client.beta.messages.parse({
       model: MODEL,
-      max_tokens: 8000,
+      max_tokens: 16000,
       // Si el modelo principal rechaza la solicitud, el servidor reintenta con el modelo de respaldo predeterminado.
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',

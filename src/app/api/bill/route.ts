@@ -3,6 +3,7 @@ import { clientMeta, guard, json, verifyHuman } from '@/lib/request';
 import { TURNSTILE_ACTIONS } from '@/lib/turnstile';
 import { BILL_CONSENT_VERSION, BILL_LIMITS, checkBillFile, sanitizeExtraction, toCalculatorInput } from '@/lib/services/bill';
 import { billAiEnabled, extractBill } from '@/lib/services/bill-extractor';
+import { checkBill } from '@/lib/services/bill-check';
 import { SITE } from '@/lib/site';
 
 export const runtime = 'nodejs';
@@ -45,6 +46,10 @@ export async function POST(req: Request) {
   }
   const data = sanitizeExtraction(r.data);
   const proposal = toCalculatorInput(data, mode);
+  // Comprobación determinista con el pliego oficial (la IA solo leyó).
+  const check = 'error' in proposal ? null : checkBill(data, await store.getActiveParams());
+  if (check && !check.ok && !('error' in proposal))
+    proposal.warnings.push(`Con la tarifa ${check.tariffCode} el servicio eléctrico de ese mes daría $${check.computedUsd.toFixed(2)} y tu planilla cobra $${check.billedUsd.toFixed(2)}: revisa la categoría tarifaria y los valores leídos.`);
   // Sin datos útiles no se conserva el archivo (minimización de datos).
   if ('error' in proposal) { await store.track('bill_failed', { reason: 'no_data' }); return json({ error: proposal.error }, 422); }
 
@@ -62,6 +67,11 @@ export async function POST(req: Request) {
   await store.track('bill_read', { mode, input: proposal.input });
   return json({
     uploadId, proposal,
-    read: { distributor: data.distributorRaw, tariffCategory: data.tariffCategory, billingPeriod: data.billingPeriod, energyKwh: data.energyKwh, electricityUsd: data.electricityUsd, totalUsd: data.totalUsd, demandKw: data.demandKw, months: data.history.length },
+    read: {
+      distributor: data.distributorRaw, distributorName: data.distributorName, tariffCategory: data.tariffCategory, billingPeriod: data.billingPeriod,
+      energyKwh: data.energyKwh, electricityUsd: data.electricityUsd, totalUsd: data.totalUsd, demandKw: data.demandKw ?? data.demandRegisteredKw, months: data.history.length,
+      voltage: data.voltage, timeOfUse: data.timeOfUse, powerFactor: data.powerFactor, charges: data.charges, creditsKwh: data.creditsKwh, uncertain: data.uncertain,
+    },
+    check,
   });
 }

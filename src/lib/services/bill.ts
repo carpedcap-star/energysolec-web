@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { DISTRIBUTORS } from '@/lib/ecuador';
+import type { PeriodKey } from '../engine/tariff-v2/types';
+import { TARIFF_CHOICES, matchDistributor as matchDistributorCode } from './tariff-select';
 import { sniffFile, type SniffedType } from './catalog';
 
 /**
@@ -47,13 +48,51 @@ export const BillExtraction = z.object({
     kwh: z.number().describe('Consumo de ese mes en kWh'),
   })).describe('Historial de consumo mensual que muestre la planilla (tabla o gráfico), incluido el mes facturado; vacío si no hay'),
   notes: z.string().nullable().describe('Observación breve sobre la lectura (dudas, valores ilegibles), sin datos personales'),
+  // Ampliación: todo lo que la planilla muestre para calcular con la tarifa oficial. Nunca datos personales.
+  customer_type: z.string().nullable().describe('Tipo de cliente o categoría general tal como aparece: residencial, comercial, industrial, artesanal, oficial…'),
+  voltage_level: z.string().nullable().describe('Nivel de tensión o voltaje del suministro tal como aparece (BT, MT, AT, bajo, medio, alto)'),
+  province: z.string().nullable().describe('Provincia del suministro; NUNCA la dirección'),
+  canton: z.string().nullable().describe('Cantón o ciudad del suministro; NUNCA la dirección'),
+  demand_registered_kw: z.number().nullable().describe('Demanda máxima registrada en el mes, en kW, si aparece aparte de la facturada'),
+  demand_history: z.array(z.object({ month: z.string().describe('AAAA-MM'), kw: z.number() })).describe('Historial de demanda que muestre la planilla; vacío si no hay'),
+  time_of_use: z.array(z.object({
+    label: z.string().describe('Nombre de la franja tal como aparece (punta, media, base, fin de semana…)'),
+    hours: z.string().nullable().describe('Horario de la franja tal como aparece (p. ej. 08:00-22:00, 18h00-22h00, S,D,F 18-22)'),
+    kwh: z.number().describe('kWh de esa franja en el mes facturado'),
+  })).describe('Consumo por franjas horarias, solo si la planilla lo desglosa; vacío si no'),
+  power_factor: z.number().nullable().describe('Factor de potencia registrado (entre 0 y 1), si aparece'),
+  charges: z.array(z.object({
+    concept: z.string().describe('Concepto tal como aparece'),
+    kind: z.enum(['energia', 'demanda', 'comercializacion', 'perdidas_transformador', 'penalizacion_fp', 'subsidio', 'alumbrado_publico', 'bomberos', 'basura', 'impuesto', 'credito', 'saldo_anterior', 'otro']).describe('Tipo de cargo'),
+    usd: z.number().describe('Valor en USD; los descuentos y subsidios en negativo'),
+  })).describe('Cada rubro de la planilla con su valor; vacío si no se lee'),
+  energy_credits_kwh: z.number().nullable().describe('Créditos o saldo de energía a favor (generación distribuida), en kWh, si aparece'),
+  previous_balance_usd: z.number().nullable().describe('Deuda o saldo de meses anteriores incluido en el total, en USD, si aparece'),
+  uncertain_fields: z.array(z.string()).describe('Nombres de los campos de este esquema que leíste con dudas'),
 });
 export type BillExtraction = z.infer<typeof BillExtraction>;
 
 // ---------------------------------------------------------------- Saneamiento
+export type ChargeKind = BillExtraction['charges'][number]['kind'];
 export type BillData = {
-  distributor: string | null;        // valor de DISTRIBUTORS o null
+  distributor: string | null;        // código de distribuidora del pliego (EEQ, CNEL-GYE…) o null
+  distributorName: string | null;
   distributorRaw: string | null;
+  segment: 'residencial' | 'comercial' | 'industrial' | null;
+  voltage: 'BV' | 'MV' | 'AV1' | 'AV2' | null;
+  province: string | null;
+  canton: string | null;
+  demandRegisteredKw: number | null;
+  demandHistory: { month: string; kw: number }[];
+  /** kWh por franja con las claves del pliego, y el esquema detectado. */
+  timeOfUse: { scheme: 'HORARIA_2' | 'DIFERENCIADA_4'; kwh: Partial<Record<PeriodKey, number>> } | null;
+  powerFactor: number | null;
+  charges: { concept: string; kind: ChargeKind; usd: number }[];
+  creditsKwh: number | null;
+  previousBalanceUsd: number | null;
+  /** Clave de tarifa del pliego deducida de la categoría, tensión, demanda y franjas (null si no es clara). */
+  tariffKey: string | null;
+  uncertain: string[];
   tariffCategory: string | null;
   billingPeriod: string | null;      // AAAA-MM
   energyKwh: number | null;
@@ -73,24 +112,76 @@ const inRange = (v: number | null | undefined, min: number, max: number) =>
   typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? Math.round(v * 100) / 100 : null;
 const normalize = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-/** Asocia el nombre leído a una distribuidora de la lista; si no hay coincidencia clara, null (el cliente elige). */
-export function matchDistributor(raw: string | null): string | null {
-  if (!raw) return null;
-  const s = normalize(raw);
-  const rules: [RegExp, string][] = [
-    [/\bcnel\b|corporacion nacional de electricidad/, 'CNEL EP (unidades de negocio)'],
-    [/\beeq\b|electrica quito/, 'Empresa Eléctrica Quito'],
-    [/centro ?sur/, 'Centrosur'],
-    [/regional del sur|\beerssa\b/, 'Empresa Eléctrica Regional del Sur'],
-    [/ambato|\beeasa\b/, 'Empresa Eléctrica Ambato'],
-    [/azogues/, 'Empresa Eléctrica Azogues'],
-    [/riobamba|\beersa\b/, 'Empresa Eléctrica Riobamba'],
-    [/cotopaxi|\belepco\b/, 'Empresa Eléctrica Cotopaxi'],
-    [/emelnorte|regional norte|electrica norte/, 'Empresa Eléctrica Norte'],
-    [/galapagos/, 'Empresa Eléctrica Galápagos'],
-  ];
-  const hit = rules.find(([re]) => re.test(s));
-  return hit && DISTRIBUTORS.includes(hit[1]) ? hit[1] : null;
+export { matchDistributor } from './tariff-select';
+
+const SEGMENT_RULES: [RegExp, BillData['segment']][] = [[/resid/, 'residencial'], [/industr|artesan/, 'industrial'], [/comerc|general|oficial|servicio|asistencia|culto|bombeo/, 'comercial']];
+export function segmentFrom(text: string | null): BillData['segment'] {
+  if (!text) return null;
+  const n = normalize(text);
+  return SEGMENT_RULES.find(([re]) => re.test(n))?.[1] ?? null;
+}
+export function voltageFrom(text: string | null): BillData['voltage'] {
+  if (!text) return null;
+  const n = normalize(text);
+  if (/av2|138|grupo ?2/.test(n)) return 'AV2';
+  if (/\bat\b|alt[oa]|\bav1?\b/.test(n)) return 'AV1';
+  if (/\bmt\b|medi[oa]|\bmv\b/.test(n)) return 'MV';
+  if (/\bbt\b|baj[oa]|\bbv\b/.test(n)) return 'BV';
+  return null;
+}
+
+/**
+ * Franjas de la planilla → claves del pliego. Con cuatro franjas (o alguna de lunes a viernes / fin de semana) es la
+ * tarifa diferenciada; con dos (08–22 y 22–08) es la horaria. Si una franja no se reconoce, no se usan (el estudio usa
+ * el perfil tipo y lo advierte).
+ */
+export function mapTimeOfUse(items: { label: string; hours: string | null; kwh: number }[]): BillData['timeOfUse'] {
+  const clean = items.filter((x) => Number.isFinite(x.kwh) && x.kwh >= 0);
+  if (clean.length < 2) return null;
+  const hrs = (x: { label: string; hours: string | null }) => normalize(`${x.label} ${x.hours ?? ''}`).replace(/h(\d\d)/g, ':$1').replace(/\s+/g, ' ');
+  const weekend = (t: string) => /sab|dom|feriad|fin de semana|s,? ?d|sdf/.test(t);
+  const has = (t: string, a: number, b: number) => new RegExp(`\\b0?${a}(:00)?\\s*(-|a|hasta)\\s*0?${b}(:00)?\\b`).test(t);
+  const four = clean.length >= 3 || clean.some((x) => weekend(hrs(x)) || /punta|media/.test(hrs(x)));
+  const out: Partial<Record<PeriodKey, number>> = {};
+  for (const x of clean) {
+    const t = hrs(x);
+    let k: PeriodKey | null = null;
+    if (four) {
+      if (weekend(t) && (has(t, 18, 22) || /punta/.test(t))) k = 'sdf_18_22';
+      else if (has(t, 18, 22) || /punta/.test(t)) k = 'lv_18_22';
+      else if (has(t, 8, 18) || /media/.test(t)) k = 'lv_08_18';
+      else if (has(t, 22, 8) || /base/.test(t)) k = 'base';
+    } else {
+      if (has(t, 8, 22)) k = 'h08_22';
+      else if (has(t, 22, 8)) k = 'h22_08';
+    }
+    if (!k) return null;
+    out[k] = (out[k] ?? 0) + x.kwh;
+  }
+  return { scheme: four ? 'DIFERENCIADA_4' : 'HORARIA_2', kwh: out };
+}
+
+/** Clave de tarifa del pliego a partir de lo leído. Solo si la combinación existe para el segmento. */
+export function tariffKeyFromBill(segment: BillData['segment'], category: string | null, voltage: BillData['voltage'], hasDemand: boolean, scheme: 'HORARIA_2' | 'DIFERENCIADA_4' | null): string | null {
+  if (!segment) return null;
+  if (segment === 'residencial') return 'RES';
+  const cat = normalize(category ?? '');
+  const v = voltage ?? 'BV';
+  // La categoría puede decir «horaria» aunque la planilla no desglose las franjas.
+  if (!scheme && /horari/.test(cat)) scheme = v === 'BV' || segment === 'comercial' ? 'HORARIA_2' : 'DIFERENCIADA_4';
+  let key: string;
+  if (segment === 'industrial') {
+    if (/artesan/.test(cat) || (v === 'BV' && !hasDemand && !scheme)) key = 'ART-BV-SD';
+    else if (v === 'AV2') key = 'IND-AV2-HD';
+    else if (v === 'AV1') key = 'IND-AV1-HD';
+    else if (v === 'MV') key = scheme ? 'IND-MV-HD' : 'IND-MV-D';
+    else key = scheme ? 'IND-BV-H' : 'IND-BV-D';
+  } else {
+    if (v === 'AV1' || v === 'AV2') key = 'COM-AV-H';
+    else if (v === 'MV') key = scheme ? 'COM-MV-H' : 'COM-MV-D';
+    else key = scheme ? 'COM-BV-H' : hasDemand ? 'COM-BV-D' : 'COM-BV-SD';
+  }
+  return TARIFF_CHOICES[segment].some((c) => c.key === key) ? key : null;
 }
 
 /** Valida rangos y formatos de la propuesta de la IA. Lo que no es plausible se descarta (el cliente lo completa). */
@@ -107,11 +198,27 @@ export function sanitizeExtraction(x: BillExtraction): BillData {
   if (period && energyKwh != null && !byMonth.has(period)) byMonth.set(period, energyKwh);
   const history = [...byMonth.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-24).map(([month, kwh]) => ({ month, kwh }));
   const distributorRaw = clip(x.distributor, 80);
+  const dist = matchDistributorCode(distributorRaw);
+  const tariffCategory = clip(x.tariff_category, 80);
+  const segment = segmentFrom(`${x.customer_type ?? ''} ${tariffCategory ?? ''}`.trim() || null);
+  const voltage = voltageFrom(`${x.voltage_level ?? ''} ${tariffCategory ?? ''}`.trim() || null);
+  const demandKw = inRange(x.demand_kw, 0.1, 100_000);
+  const demandRegisteredKw = inRange(x.demand_registered_kw, 0.1, 100_000);
+  const timeOfUse = mapTimeOfUse((x.time_of_use ?? []).map((t) => ({ label: clip(t.label, 40) ?? '', hours: clip(t.hours, 40), kwh: t.kwh })));
+  const demandHistory: { month: string; kw: number }[] = [];
+  for (const h of x.demand_history ?? []) { const kw = inRange(h.kw, 0.1, 100_000); if (MONTH_RE.test((h.month ?? '').trim()) && kw != null) demandHistory.push({ month: h.month.trim(), kw }); }
+  const charges = (x.charges ?? []).flatMap((c) => { const usd = inRange(c.usd, -5_000_000, 5_000_000); const concept = clip(c.concept, 60); return usd != null && concept ? [{ concept, kind: c.kind, usd }] : []; }).slice(0, 40);
   return {
-    distributor: matchDistributor(distributorRaw), distributorRaw,
-    tariffCategory: clip(x.tariff_category, 80), billingPeriod: period,
+    distributor: dist?.code ?? null, distributorName: dist?.name ?? null, distributorRaw,
+    tariffCategory, billingPeriod: period,
     energyKwh, electricityUsd: inRange(x.electricity_usd, 0.5, 5_000_000), totalUsd: inRange(x.total_usd, 0.5, 5_000_000),
-    demandKw: inRange(x.demand_kw, 0.1, 100_000), history, notes: clip(x.notes, 300),
+    demandKw, history, notes: clip(x.notes, 300),
+    segment, voltage, province: clip(x.province, 40), canton: clip(x.canton, 60), demandRegisteredKw,
+    demandHistory: demandHistory.sort((a, b) => a.month.localeCompare(b.month)).slice(-24),
+    timeOfUse, powerFactor: inRange(x.power_factor, 0.1, 1), charges,
+    creditsKwh: inRange(x.energy_credits_kwh, 0, 10_000_000), previousBalanceUsd: inRange(x.previous_balance_usd, -5_000_000, 5_000_000),
+    tariffKey: tariffKeyFromBill(segment, tariffCategory, voltage, demandKw != null || demandRegisteredKw != null, timeOfUse?.scheme ?? null),
+    uncertain: (x.uncertain_fields ?? []).map((f) => clip(f, 40)).filter((f): f is string => !!f).slice(0, 20),
   };
 }
 
@@ -125,6 +232,13 @@ export type BillCalcInput = {
   history: string[];
   demandKw: string;
   distributor: string;
+  /** Datos de la planilla para el resto del recorrido (los confirma el cliente). */
+  segment?: BillData['segment'];
+  tariffKey?: string | null;
+  province?: string | null;
+  canton?: string | null;
+  periodKwh?: Partial<Record<PeriodKey, number>> | null;
+  powerFactor?: number | null;
   /** Avisos para el cliente antes de confirmar. */
   warnings: string[];
 };
@@ -154,7 +268,12 @@ export function toCalculatorInput(d: BillData, mode: CalcMode): BillCalcInput | 
   if (d.electricityUsd == null && d.totalUsd != null)
     warnings.push('Tomamos el total a pagar. Si tu planilla incluye tasas de recolección de basura, bomberos u otras, réstalas: no dependen de tu consumo eléctrico.');
 
-  const base = { history: slots, demandKw: d.demandKw != null ? fmt(d.demandKw) : '', distributor: d.distributor ?? '' };
+  const demand = d.demandKw ?? d.demandRegisteredKw;
+  const base = {
+    history: slots, demandKw: demand != null ? fmt(demand) : '', distributor: d.distributor ?? '',
+    segment: d.segment, tariffKey: d.tariffKey, province: d.province, canton: d.canton,
+    periodKwh: d.timeOfUse?.kwh ?? null, powerFactor: d.powerFactor,
+  };
   let out: BillCalcInput;
   if (mode === 'profesional' && full) {
     out = { ...base, input: 'history', monthlyKwh: '', monthlyBillUsd: usd != null ? fmt(usd) : '', warnings };
@@ -182,6 +301,9 @@ export function toCalculatorInput(d: BillData, mode: CalcMode): BillCalcInput | 
     if (price < 0.03 || price > 0.5)
       warnings.push(`El valor y el consumo leídos dan $${price.toFixed(2)} por kWh, una cifra poco habitual: revisa ambos datos.`);
   }
+  if (d.previousBalanceUsd && d.previousBalanceUsd > 0) warnings.push('Tu planilla incluye saldos de meses anteriores: no los tomamos como consumo.');
+  if (d.creditsKwh) warnings.push(`Tu planilla muestra ${Math.round(d.creditsKwh)} kWh de créditos de energía: ya tienes generación propia; un asesor revisará tu caso.`);
+  if (d.uncertain.length) warnings.push(`Revisa con atención: ${d.uncertain.join(', ')} (lectura con dudas).`);
   if (d.notes) warnings.push(`Nota de la lectura: ${d.notes}`);
   return out;
 }
