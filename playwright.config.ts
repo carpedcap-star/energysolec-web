@@ -19,7 +19,8 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   timeout: 90_000,
   expect: { timeout: 15_000 },
-  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+  // En CI, «github» publica cada falla como anotación visible en la ejecución.
+  reporter: process.env.CI ? [['list'], ['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: 'on-first-retry',

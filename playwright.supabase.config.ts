@@ -17,7 +17,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   timeout: 300_000,
   expect: { timeout: 30_000 },
-  reporter: process.env.CI ? [['list'], ['html', { open: 'never', outputFolder: 'playwright-report-supabase' }]] : 'list',
+  reporter: process.env.CI ? [['list'], ['github'], ['html', { open: 'never', outputFolder: 'playwright-report-supabase' }]] : 'list',
   use: { baseURL: `http://localhost:${PORT}`, viewport: { width: 1440, height: 900 }, trace: 'on-first-retry', screenshot: 'only-on-failure' },
   webServer: {
     command: `node e2e-supabase/setup.mjs && npx next dev -p ${PORT}`,
