@@ -9,3 +9,5 @@ node_modules
 .data/e2e-db.json
 playwright-report/
 test-results/
+.env.supabase-local
+playwright-report-supabase/

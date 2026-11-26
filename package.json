@@ -9,6 +9,8 @@
     "test": "vitest run",
     "test:live": "LIVE_SOURCES=1 NODE_USE_ENV_PROXY=1 vitest run src/lib/engine/resource.live.test.ts",
     "e2e": "playwright test",
+    "test:supabase": "SUPABASE_IT=1 vitest run src/lib/data/store.supabase.test.ts",
+    "e2e:supabase": "playwright test -c playwright.supabase.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

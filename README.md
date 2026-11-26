@@ -18,21 +18,12 @@ Sin Supabase, los datos se guardan en `.data/dev-db.json` (solo desarrollo; en p
 
 ## Despliegue en producción
 
-1. **Supabase** — crea el proyecto (región `us-east-1` o la más cercana).
-   ```bash
-   supabase link --project-ref <ref>
-   supabase db push                      # aplica supabase/migrations/*
-   psql "$DATABASE_URL" -f supabase/seed.sql   # datos iniciales provisionales
-   ```
-   Crea el primer usuario en *Authentication → Users* y luego:
-   ```sql
-   insert into profiles (id, full_name, email, role) values ('<uuid-del-usuario>', 'Nombre', 'correo@energysolec.com', 'superadmin');
-   ```
-   Asesores comerciales: `role='ventas', is_advisor=true` (reciben leads por reparto equitativo).
+1. **Supabase** — sigue [docs/SUPABASE.md](docs/SUPABASE.md): crear y vincular el proyecto, `supabase db push`, datos iniciales, **desactivar los registros abiertos**, primer superadministrador y buckets. La misma guía explica cómo probar todo contra un Supabase local (`npm run test:supabase` y `npm run e2e:supabase`).
 2. **Vercel** (recomendado) — importa el repositorio y define las variables de `.env.example`:
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (esta última **solo** servidor).
    - `APP_SECRET` (cadena aleatoria larga), `IP_HASH_SALT`, `NEXT_PUBLIC_SITE_URL=https://www.energysolec.com`.
-   - `RESEND_API_KEY`, `EMAIL_FROM`, `SALES_NOTIFY_EMAIL` (verifica el dominio en Resend: registros SPF/DKIM).
+   - `RESEND_API_KEY`, `EMAIL_FROM` (verifica el dominio en Resend: registros SPF/DKIM). El correo de avisos y los IDs de analítica se configuran en el panel (**Contacto e integraciones**).
+   - `CRON_SECRET` (tareas diarias) y, si quieres la lectura de planillas, `ANTHROPIC_API_KEY`.
    - Opcionales: `TURNSTILE_SECRET_KEY` + `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `WHATSAPP_CLOUD_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID`, `NEXT_PUBLIC_GTM_ID` / `NEXT_PUBLIC_GA4_ID` / `NEXT_PUBLIC_META_PIXEL_ID`.
 3. **Dominio** — apunta `www.energysolec.com` a Vercel (CNAME) y redirige el dominio raíz. HTTPS es automático; HSTS ya está configurado en `next.config.mjs`.
 4. **Copias de seguridad** — activa *Point-in-Time Recovery* en Supabase (plan Pro) o programa `pg_dump` diario.

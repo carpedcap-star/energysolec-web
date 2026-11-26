@@ -774,9 +774,14 @@ const devStore: Store = {
 };
 
 // ======================= Implementación Supabase =======================
-function sb(): SupabaseClient {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
+/** Cliente con la clave de servicio; con `actor`, la cabecera x-ese-actor (la base solo la acepta con esta clave). */
+function client(actor: string | null): SupabaseClient {
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+    auth: { persistSession: false },
+    ...(actor ? { global: { headers: { 'x-ese-actor': actor } } } : {}),
+  });
 }
+const sb = () => client(null);
 function must<T>(r: { data: T | null; error: { message: string } | null }): T {
   if (r.error) throw new Error(r.error.message);
   return r.data as T;
@@ -903,7 +908,14 @@ function productDbError(e: { code?: string; message: string }): Error {
   return new Error(e.message);
 }
 
-const supabaseStore: Store = {
+/**
+ * Implementación Supabase ligada a un actor (usuario del panel): sus escrituras envían `x-ese-actor`, que la base usa
+ * para la auditoría y para reglas como la verificación de pagos (migración 0010; solo vale con la clave de servicio).
+ * Dentro del objeto, `sb()` es el cliente con esa cabecera; las funciones de lectura de fuera usan el cliente sin actor.
+ */
+function supabaseStoreFor(actor: string | null): Store {
+const sb = () => client(actor);
+return {
   kind: 'supabase',
   async getActiveParams() {
     const r = must(await sb().from('calc_params').select('*').eq('active', true).maybeSingle()) as any;
@@ -1422,6 +1434,8 @@ const supabaseStore: Store = {
   async countEvents(name, days) { const { count } = await sb().from('events').select('id', { count: 'exact', head: true }).eq('name', name).gte('at', new Date(Date.now() - days * 864e5).toISOString()); return count ?? 0; },
   async rateLimit(bucket, max, win) { const r = await sb().rpc('hit_rate_limit', { p_bucket: bucket, p_max: max, p_window_seconds: win }); return r.error ? true : !!r.data; },
 };
+}
+const supabaseStore = supabaseStoreFor(null);
 
 export function getStore(): Store {
   const hasSupabase = !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -1429,4 +1443,13 @@ export function getStore(): Store {
   if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEV_STORE !== 'true')
     throw new Error('Supabase no está configurado. Define NEXT_PUBLIC_SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY.');
   return devStore;
+}
+
+/**
+ * Almacén para las acciones del panel: con Supabase, cada escritura queda atribuida a `actorId` (auditoría, historial
+ * de pedidos y leads, verificación de pagos). En desarrollo es el mismo almacén local.
+ */
+export function getStoreAs(actorId: string): Store {
+  const st = getStore();
+  return st.kind === 'supabase' && isUuid(actorId) ? supabaseStoreFor(actorId) : st;
 }

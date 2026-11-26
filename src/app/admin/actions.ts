@@ -9,7 +9,7 @@ import { guard } from '@/lib/request';
 import { esc, sendEmail } from '@/lib/services/messaging';
 import { parseUserForm, roleChangeProblem } from '@/lib/services/users';
 import { normalizeIdentity, parseColorsForm, type Identity } from '@/lib/services/identity';
-import { getStore } from '@/lib/data/store';
+import { getStore, getStoreAs } from '@/lib/data/store';
 import { parseParamsForm } from '@/lib/services/params-form';
 import { parseTariffForm } from '@/lib/services/tariff-form';
 import { LEAD_STAGES, ORDER_STATUSES, PAID_STATES, type AppRole } from '@/lib/data/types';
@@ -37,7 +37,7 @@ export async function logoutAction() { await signOut(); redirect('/admin/login')
 
 export async function updateLeadAction(id: string, fd: FormData) {
   const staff = await requireStaff('leads_edit');
-  const store = getStore();
+  const store = getStoreAs(staff.id);
   const lead = await store.getLead(id);
   if (!lead) throw new Error('Lead no encontrado');
   if (staff.role === 'ventas' && lead.advisor_id && lead.advisor_id !== staff.id) throw new Error('Este lead está asignado a otro asesor');
@@ -85,7 +85,7 @@ export async function updateOrderAction(id: string, _: unknown, fd: FormData) {
   if (!ORDER_STATUSES.some((s) => s.id === status)) return { error: 'Estado no válido' };
   const ref = (fd.get('payment_reference') as string)?.trim();
   if (PAID_STATES.includes(status as any)) {
-    const order = await getStore().getOrder(id);
+    const order = await getStoreAs(staff.id).getOrder(id);
     const alreadyVerified = !!order?.payment_verified_by;
     if (!alreadyVerified) {
       if (!can(staff, 'verify_payment')) return { error: 'Solo Gerencia puede registrar la verificación del pago.' };
@@ -93,7 +93,7 @@ export async function updateOrderAction(id: string, _: unknown, fd: FormData) {
     }
   }
   try {
-    await getStore().updateOrderStatus(id, status as any, staff.id, ref && can(staff, 'verify_payment') ? { reference: ref } : undefined);
+    await getStoreAs(staff.id).updateOrderStatus(id, status as any, staff.id, ref && can(staff, 'verify_payment') ? { reference: ref } : undefined);
   } catch (e) { return { error: (e as Error).message }; }
   revalidatePath(`/admin/pedidos/${id}`); revalidatePath('/admin/pedidos');
   return { ok: true };
@@ -111,17 +111,17 @@ export async function saveParamsAction(_: unknown, fd: FormData): Promise<{ erro
   const forcedPending = !VALIDATES_PARAMS.includes(staff.role);
   if (forcedPending) data.isPlaceholder = true;
   let version: number;
-  try { version = (await getStore().saveParams(data, staff.id)).version; } catch (e) { return { error: (e as Error).message }; }
+  try { version = (await getStoreAs(staff.id).saveParams(data, staff.id)).version; } catch (e) { return { error: (e as Error).message }; }
   revalidatePath('/admin/parametros'); revalidatePath('/calculadora');
   redirect(`/admin/parametros?guardado=${version}${forcedPending ? '&pendiente=1' : ''}`);
 }
 
 export async function saveTariffAction(_: unknown, fd: FormData): Promise<{ error?: string }> {
-  await requireStaff('tariffs');
+  const staff = await requireStaff('tariffs');
   const parsed = parseTariffForm(fd);
   if ('error' in parsed) return { error: parsed.error };
   const t = parsed.data;
-  const store = getStore();
+  const store = getStoreAs(staff.id);
   const all = await store.listTariffs();
   if (t.id && !all.some((x) => x.id === t.id)) return { error: 'Tarifa no encontrada.' };
   // La calculadora elige la tarifa por su código: no puede repetirse entre tarifas activas.
@@ -133,8 +133,8 @@ export async function saveTariffAction(_: unknown, fd: FormData): Promise<{ erro
 }
 
 export async function deactivateTariffAction(id: string, _: unknown, _fd: FormData): Promise<{ error?: string }> {
-  await requireStaff('tariffs');
-  const store = getStore();
+  const staff = await requireStaff('tariffs');
+  const store = getStoreAs(staff.id);
   const all = await store.listTariffs();
   const t = all.find((x) => x.id === id);
   if (!t) return { error: 'Tarifa no encontrada.' };
@@ -146,10 +146,10 @@ export async function deactivateTariffAction(id: string, _: unknown, _fd: FormDa
 }
 
 export async function saveStatAction(fd: FormData) {
-  await requireStaff('stats');
+  const staff = await requireStaff('stats');
   const s = z.object({ id: z.string(), label: z.string().min(2), value: z.coerce.number().min(0), unit: z.string().max(12).optional(), source_note: z.string().min(5), verified: z.boolean(), sort: z.coerce.number() })
     .parse({ id: fd.get('id'), label: fd.get('label'), value: fd.get('value'), unit: fd.get('unit') || undefined, source_note: fd.get('source_note'), verified: fd.get('verified') === 'on', sort: fd.get('sort') });
-  await getStore().saveStat({ ...s, unit: s.unit ?? null });
+  await getStoreAs(staff.id).saveStat({ ...s, unit: s.unit ?? null });
   revalidatePath('/admin/indicadores'); revalidatePath('/');
 }
 
@@ -161,11 +161,11 @@ function revalidateCatalog(...slugs: (string | undefined)[]) {
 }
 
 export async function saveProductAction(_: unknown, fd: FormData): Promise<{ error?: string }> {
-  await requireStaff('products');
+  const staff = await requireStaff('products');
   const parsed = parseProductForm(fd);
   if ('error' in parsed) return { error: parsed.error };
   const input = parsed.data;
-  const store = getStore();
+  const store = getStoreAs(staff.id);
   const prev = input.id ? await store.getProductRecord(input.id) : null;
   if (input.id && !prev) return { error: 'Producto no encontrado.' };
 
@@ -204,8 +204,8 @@ export async function saveProductAction(_: unknown, fd: FormData): Promise<{ err
 }
 
 export async function deleteProductAction(id: string, _: unknown, _fd: FormData): Promise<{ error?: string }> {
-  await requireStaff('products');
-  const store = getStore();
+  const staff = await requireStaff('products');
+  const store = getStoreAs(staff.id);
   const prev = await store.getProductRecord(id);
   if (!prev) return { error: 'Producto no encontrado.' };
   try { await store.deleteProduct(id); } catch (e) { return { error: (e as Error).message }; }
@@ -231,11 +231,11 @@ function revalidateProjects(...slugs: (string | undefined)[]) {
 }
 
 export async function saveProjectAction(_: unknown, fd: FormData): Promise<{ error?: string }> {
-  await requireStaff('projects');
+  const staff = await requireStaff('projects');
   const parsed = parseProjectForm(fd);
   if ('error' in parsed) return { error: parsed.error };
   const input = parsed.data;
-  const store = getStore();
+  const store = getStoreAs(staff.id);
   const prev = input.id ? await store.getProjectRecord(input.id) : null;
   if (input.id && !prev) return { error: 'Proyecto no encontrado.' };
 
@@ -264,8 +264,8 @@ export async function saveProjectAction(_: unknown, fd: FormData): Promise<{ err
 }
 
 export async function deleteProjectAction(id: string, _: unknown, _fd: FormData): Promise<{ error?: string }> {
-  await requireStaff('projects');
-  const store = getStore();
+  const staff = await requireStaff('projects');
+  const store = getStoreAs(staff.id);
   const prev = await store.getProjectRecord(id);
   if (!prev) return { error: 'Proyecto no encontrado.' };
   try { await store.deleteProject(id); } catch (e) { return { error: (e as Error).message }; }
@@ -277,13 +277,13 @@ export async function deleteProjectAction(id: string, _: unknown, _fd: FormData)
 function revalidateBlock(path: string) { revalidatePath(path); revalidatePath('/'); revalidatePath('/admin/contenido'); }
 
 export async function saveContentBlockAction(page: string, slot: string, _: unknown, fd: FormData): Promise<{ error?: string }> {
-  await requireStaff('content');
+  const staff = await requireStaff('content');
   const def = findBlock(page, slot);
   if (!def) return { error: 'Bloque no encontrado.' };
   const parsed = parseBlockForm(def, fd);
   if ('error' in parsed) return { error: parsed.error };
   const data = parsed.data;
-  const store = getStore();
+  const store = getStoreAs(staff.id);
   const current = (await store.listContentBlocks()).find((b) => b.page === page && b.slot === slot);
   const currentData = (current?.data ?? {}) as Record<string, unknown>;
 
@@ -308,10 +308,10 @@ export async function saveContentBlockAction(page: string, slot: string, _: unkn
 }
 
 export async function resetContentBlockAction(page: string, slot: string, _: unknown, _fd: FormData): Promise<{ error?: string }> {
-  await requireStaff('content');
+  const staff = await requireStaff('content');
   const def = findBlock(page, slot);
   if (!def) return { error: 'Bloque no encontrado.' };
-  try { await getStore().deleteContentBlock(page, slot); } catch (e) { return { error: (e as Error).message }; }
+  try { await getStoreAs(staff.id).deleteContentBlock(page, slot); } catch (e) { return { error: (e as Error).message }; }
   revalidateBlock(def.path);
   redirect(`/admin/contenido/${page}/${slot}?restaurado=1`);
 }
@@ -327,8 +327,8 @@ function checkDocOrImage(bytes: Uint8Array, name: string): SniffedType | string 
 }
 
 export async function saveBrandAction(_: unknown, fd: FormData): Promise<{ error?: string }> {
-  await requireStaff('brands');
-  const store = getStore();
+  const staff = await requireStaff('brands');
+  const store = getStoreAs(staff.id);
   const id = typeof fd.get('id') === 'string' ? String(fd.get('id')) : '';
   const prev = id ? await store.getBrandRecord(id) : null;
   if (id && !prev) return { error: 'Marca no encontrada.' };
@@ -392,10 +392,10 @@ export async function saveBrandAction(_: unknown, fd: FormData): Promise<{ error
 }
 
 export async function deleteBrandAction(id: string, _: unknown, _fd: FormData): Promise<{ error?: string }> {
-  await requireStaff('brands');
-  const prev = await getStore().getBrandRecord(id);
+  const staff = await requireStaff('brands');
+  const prev = await getStoreAs(staff.id).getBrandRecord(id);
   if (!prev) return { error: 'Marca no encontrada.' };
-  try { await getStore().deleteBrand(id); } catch (e) { return { error: (e as Error).message }; }
+  try { await getStoreAs(staff.id).deleteBrand(id); } catch (e) { return { error: (e as Error).message }; }
   revalidateBrands();
   redirect(`/admin/marcas?eliminado=${encodeURIComponent(prev.name)}`);
 }
@@ -407,7 +407,7 @@ function revalidateServices(...slugs: string[]) {
 }
 
 export async function saveServiceAction(_: unknown, fd: FormData): Promise<{ error?: string }> {
-  await requireStaff('services');
+  const staff = await requireStaff('services');
   // Los servicios del catálogo base conservan su URL.
   const baseSlug = String(fd.get('base_slug') ?? '');
   if (baseSlug) { if (!SERVICES.some((s) => s.slug === baseSlug)) return { error: 'Servicio base no válido.' }; fd.set('slug', baseSlug); }
@@ -415,7 +415,7 @@ export async function saveServiceAction(_: unknown, fd: FormData): Promise<{ err
   if ('error' in parsed) return { error: parsed.error };
   const input = parsed.data;
   if (!baseSlug && SERVICES.some((s) => s.slug === input.slug)) return { error: 'Esa URL pertenece a un servicio del catálogo base. Elige otra.' };
-  const store = getStore();
+  const store = getStoreAs(staff.id);
   const rows = await store.listServiceRows();
   const prev = input.id ? rows.find((r) => r.id === input.id) : rows.find((r) => r.slug === baseSlug && baseSlug);
   if (input.id && !prev) return { error: 'Servicio no encontrado.' };
@@ -434,8 +434,8 @@ export async function saveServiceAction(_: unknown, fd: FormData): Promise<{ err
 
 /** Servicio nuevo: lo elimina. Servicio base: borra su fila y vuelve a la versión base (provisional). */
 export async function deleteServiceAction(slug: string, _: unknown, _fd: FormData): Promise<{ error?: string }> {
-  await requireStaff('services');
-  const store = getStore();
+  const staff = await requireStaff('services');
+  const store = getStoreAs(staff.id);
   const row = (await store.listServiceRows()).find((r) => r.slug === slug);
   if (!row) return { error: 'Servicio no encontrado.' };
   try { await store.deleteService(row.id); } catch (e) { return { error: (e as Error).message }; }
@@ -455,7 +455,7 @@ export async function savePostAction(_: unknown, fd: FormData): Promise<{ error?
   const parsed = parsePostForm(fd);
   if ('error' in parsed) return { error: parsed.error };
   const input = parsed.data;
-  const store = getStore();
+  const store = getStoreAs(staff.id);
   const prev = input.id ? await store.getPostRecord(input.id) : null;
   if (input.id && !prev) return { error: 'Artículo no encontrado.' };
   if (input.cover_id && input.cover_id !== prev?.cover?.id) return { error: 'La imagen cambió mientras editabas. Recarga la página.' };
@@ -472,24 +472,24 @@ export async function savePostAction(_: unknown, fd: FormData): Promise<{ error?
 }
 
 export async function deletePostAction(id: string, _: unknown, _fd: FormData): Promise<{ error?: string }> {
-  await requireStaff('blog');
-  const prev = await getStore().getPostRecord(id);
+  const staff = await requireStaff('blog');
+  const prev = await getStoreAs(staff.id).getPostRecord(id);
   if (!prev) return { error: 'Artículo no encontrado.' };
-  try { await getStore().deletePost(id); } catch (e) { return { error: (e as Error).message }; }
+  try { await getStoreAs(staff.id).deletePost(id); } catch (e) { return { error: (e as Error).message }; }
   revalidateBlog(prev.slug);
   redirect(`/admin/blog?eliminado=${encodeURIComponent(prev.title)}`);
 }
 
 /** Imagen dentro del artículo: se sube y se devuelve su URL para insertarla en el Markdown. */
 export async function uploadPostImageAction(fd: FormData): Promise<{ url?: string; error?: string }> {
-  await requireStaff('blog');
+  const staff = await requireStaff('blog');
   const f = files(fd.getAll('image'))[0];
   if (!f) return { error: 'Elige una imagen.' };
   const c = await checkedImages([f]);
   if (typeof c === 'string') return { error: c };
   try {
     const alt = String(fd.get('alt') ?? '').slice(0, 140) || null;
-    const m = await getStore().uploadMedia({ bytes: c[0].bytes, mime: c[0].t.mime, ext: c[0].t.ext, kind: 'image', folder: 'blog', alt });
+    const m = await getStoreAs(staff.id).uploadMedia({ bytes: c[0].bytes, mime: c[0].t.mime, ext: c[0].t.ext, kind: 'image', folder: 'blog', alt });
     return { url: m.url };
   } catch (e) { return { error: (e as Error).message }; }
 }
@@ -517,12 +517,12 @@ async function sendAccessEmail(to: string, name: string, link: string, type: 'in
 }
 
 export async function createUserAction(_: unknown, fd: FormData): Promise<LinkResult> {
-  await requireStaff('users');
+  const staff = await requireStaff('users');
   const parsed = parseUserForm(fd);
   if ('error' in parsed) return { error: parsed.error };
   const { active: _a, ...input } = parsed.data;
   let created: Awaited<ReturnType<ReturnType<typeof getStore>['createUser']>>;
-  try { created = await getStore().createUser(input); } catch (e) { return { error: (e as Error).message }; }
+  try { created = await getStoreAs(staff.id).createUser(input); } catch (e) { return { error: (e as Error).message }; }
   const link = await accessUrl(created.token_hash, created.type);
   const emailSent = await sendAccessEmail(input.email, input.full_name, link, created.type);
   revalidatePath('/admin/usuarios');
@@ -534,7 +534,7 @@ export async function updateUserAction(id: string, _: unknown, fd: FormData): Pr
   const staff = await requireStaff('users');
   const parsed = parseUserForm(fd);
   if ('error' in parsed) return { error: parsed.error };
-  const store = getStore();
+  const store = getStoreAs(staff.id);
   const all = await store.listUsers();
   const target = all.find((u) => u.id === id);
   if (!target) return { error: 'Usuario no encontrado.' };
@@ -555,8 +555,8 @@ export async function updateUserAction(id: string, _: unknown, fd: FormData): Pr
 }
 
 export async function sendAccessLinkAction(id: string, _: unknown, _fd: FormData): Promise<LinkResult> {
-  await requireStaff('users');
-  const store = getStore();
+  const staff = await requireStaff('users');
+  const store = getStoreAs(staff.id);
   const u = (await store.listUsers()).find((x) => x.id === id);
   if (!u) return { error: 'Usuario no encontrado.' };
   if (!u.active) return { error: 'El usuario está desactivado. Actívalo antes de enviarle un enlace.' };
@@ -583,7 +583,7 @@ export async function saveIdentityAction(_: unknown, fd: FormData): Promise<{ er
   const staff = await requireStaff('identity');
   const parsed = parseColorsForm(fd);
   if ('error' in parsed) return { error: parsed.error };
-  const store = getStore();
+  const store = getStoreAs(staff.id);
   const current = normalizeIdentity(await store.getSetting<unknown>('brand', null));
   const next: Identity = { colors: parsed.data, logo: null, logoDark: null, favicon: null };
   const LOGOS = [['logo', 'Logo para fondos claros'], ['logoDark', 'Logo para fondos oscuros'], ['favicon', 'Ícono del sitio']] as const;
@@ -613,7 +613,7 @@ export async function reviewTradeAction(id: string, _: unknown, fd: FormData): P
   const p = ReviewSchema.safeParse({ status: fd.get('status'), tier: fd.get('tier'), review_note: String(fd.get('review_note') ?? '') });
   if (!p.success) return { error: p.error.issues[0]?.message ?? 'Datos no válidos' };
   const r = p.data;
-  const store = getStore();
+  const store = getStoreAs(staff.id);
   const t = await store.getTradeAccount(id);
   if (!t) return { error: 'Cuenta no encontrada.' };
   if (!canTransition(t.status, r.status)) return { error: `No se puede pasar de «${TRADE_STATUS[t.status]}» a «${TRADE_STATUS[r.status]}».` };
@@ -631,8 +631,8 @@ export async function reviewTradeAction(id: string, _: unknown, fd: FormData): P
 }
 
 export async function sendTradeAccessLinkAction(id: string, _: unknown, _fd: FormData): Promise<LinkResult> {
-  await requireStaff('trade');
-  const store = getStore();
+  const staff = await requireStaff('trade');
+  const store = getStoreAs(staff.id);
   const t = await store.getTradeAccount(id);
   if (!t || t.status !== 'aprobada') return { error: 'La cuenta no está aprobada.' };
   let tok: { token_hash: string; type: 'invite' | 'recovery' };
@@ -653,8 +653,8 @@ export async function runJobsAction(_: unknown, _fd: FormData): Promise<{ error?
 }
 
 export async function requeueMessageAction(id: string, _fd: FormData) {
-  await requireStaff('messages');
-  await getStore().requeueMessage(id);
+  const staff = await requireStaff('messages');
+  await getStoreAs(staff.id).requeueMessage(id);
   revalidatePath('/admin/mensajes');
 }
 
@@ -667,9 +667,9 @@ export async function verifySourcesAction(_: unknown, _fd: FormData): Promise<{ 
 }
 
 export async function clearSolarCacheAction(_: unknown, _fd: FormData): Promise<{ error?: string; cleared?: number }> {
-  await requireStaff('params');
+  const staff = await requireStaff('params');
   let n: number;
-  try { n = await getStore().clearSolarCache(); } catch (e) { return { error: (e as Error).message }; }
+  try { n = await getStoreAs(staff.id).clearSolarCache(); } catch (e) { return { error: (e as Error).message }; }
   revalidatePath('/admin/recurso-solar');
   return { cleared: n };
 }
@@ -679,7 +679,7 @@ export async function saveSettingsAction(_: unknown, fd: FormData): Promise<{ er
   const staff = await requireStaff('settings');
   const parsed = parseSettingsForm(fd);
   if ('error' in parsed) return { error: parsed.error };
-  const store = getStore();
+  const store = getStoreAs(staff.id);
   try {
     await store.saveSetting('contact', parsed.data.contact, staff.id);
     await store.saveSetting('notifications', parsed.data.notifications, staff.id);
@@ -695,7 +695,7 @@ export async function evaluateIndustrialAction(id: string, _: unknown, fd: FormD
   const kwpRaw = String(fd.get('kwp') ?? '').replace(',', '.').trim();
   const p = EvaluationSchema.safeParse({ status: fd.get('status'), kwp: kwpRaw === '' ? null : Number(kwpRaw), notes: String(fd.get('notes') ?? '') });
   if (!p.success) return { error: p.error.issues[0]?.message ?? 'Datos no válidos' };
-  const store = getStore();
+  const store = getStoreAs(staff.id);
   const r = await store.getIndustrialRequest(id);
   if (!r) return { error: 'Solicitud no encontrada.' };
   if (!canEvalTransition(r.eval_status, p.data.status)) return { error: `No se puede pasar de «${EVAL_STATUS[r.eval_status]}» a «${EVAL_STATUS[p.data.status]}».` };

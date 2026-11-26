@@ -53,3 +53,38 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 14
+
+  supabase:
+    name: Integración con Supabase real (local)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.122.1
+      # Pila local de Supabase (Postgres, PostgREST, Auth, Storage) con las migraciones y la semilla del repositorio.
+      - run: supabase start -x realtime,studio,edge-runtime,imgproxy,logflare,vector,supavisor,postgres-meta,mailpit
+      # Claves de la pila LOCAL (valores fijos de desarrollo de Supabase, no secretos del proyecto).
+      - name: Variables de la pila local
+        run: |
+          supabase status -o env | tr -d '"' | sed -n \
+            -e 's/^API_URL=/NEXT_PUBLIC_SUPABASE_URL=/p' \
+            -e 's/^ANON_KEY=/NEXT_PUBLIC_SUPABASE_ANON_KEY=/p' \
+            -e 's/^SERVICE_ROLE_KEY=/SUPABASE_SERVICE_ROLE_KEY=/p' >> "$GITHUB_ENV"
+      - run: npm run test:supabase
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e:supabase
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: reporte-playwright-supabase
+          path: |
+            playwright-report-supabase/
+            test-results/
+          retention-days: 14
