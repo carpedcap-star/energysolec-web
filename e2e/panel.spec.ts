@@ -5,6 +5,7 @@ const SECTIONS: [string, string, Role[]][] = [
   ['/admin/leads', 'CRM · Leads', ['superadmin', 'gerencia', 'marketing', 'ventas', 'ingenieria']],
   ['/admin/pedidos', 'Pedidos', ['superadmin', 'gerencia', 'ventas', 'compras']],
   ['/admin/cuentas', 'Cuentas comerciales', ['superadmin', 'gerencia', 'ventas']],
+  ['/admin/industrial', 'Cotizaciones industriales', ['superadmin', 'gerencia', 'ventas', 'ingenieria']],
   ['/admin/productos', 'Productos', ['superadmin', 'compras']],
   ['/admin/proyectos', 'Proyectos', ['superadmin', 'marketing', 'ingenieria']],
   ['/admin/contenido', 'Contenido del sitio', ['superadmin', 'marketing']],

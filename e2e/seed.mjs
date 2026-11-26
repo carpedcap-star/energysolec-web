@@ -40,6 +40,13 @@ d.bills = bills.map(([id, study_id, lead_id, extracted, confirmed_by_user, at]) 
   return { id, path: `bills/${id}.pdf`, mime: 'application/pdf', study_id, lead_id, extracted, confirmed_by_user, created_at: iso(at) };
 });
 
+// Un documento industrial huérfano de hace 2 días (el visitante no envió el formulario): la depuración lo borra.
+rmSync('.data/private/project-docs', { recursive: true, force: true });
+mkdirSync('.data/private/project-docs', { recursive: true });
+writeFileSync('.data/private/project-docs/d0000000-0000-4000-8000-000000000001.pdf', pdf);
+d.industrial = [];
+d.industrial_docs = [{ id: 'd0000000-0000-4000-8000-000000000001', request_id: null, kind: 'otro', filename: 'huerfano.pdf', mime: 'application/pdf', size_bytes: pdf.length, created_at: iso(now - 2 * D), path: 'd0000000-0000-4000-8000-000000000001.pdf' }];
+
 // Un correo en error con cuerpo (se puede reintentar a mano).
 d.messages = [{ id: 'e0000000-0000-4000-8000-000000000001', channel: 'email', to_address: 'cliente@example.com', template: 'pedido_recibido', payload: { subject: 'Pedido de prueba', html: '<p>hola</p>' }, is_marketing: false, status: 'error', error: 'Resend 500', attempts: 5, created_at: iso(now - 2 * H), sent_at: null, next_attempt_at: null, last_attempt_at: iso(now) }];
 

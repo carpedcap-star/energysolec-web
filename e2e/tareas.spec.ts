@@ -18,6 +18,8 @@ test.describe('tareas programadas y seguimiento', () => {
     expect(j.summary.recordatorios).toMatchObject({ resumenes: 2, sin_destinatario: 0 });
     expect(j.summary.recordatorios.actividades).toBeGreaterThanOrEqual(1);
     expect(j.summary.depuracion.planillas_borradas).toBe(1);
+    expect(j.summary.depuracion.documentos_huerfanos_borrados).toBe(1);
+    expect(existsSync('.data/private/project-docs/d0000000-0000-4000-8000-000000000001.pdf')).toBe(false);
     expect(JSON.stringify(j)).not.toContain('@');
 
     const d = db();

@@ -85,8 +85,10 @@ async function purge(): Promise<Summary> {
   const store = getStore();
   // Caché solar: más allá del doble de su vigencia ya no sirve ni como respaldo.
   const solarBefore = new Date(Date.now() - 2 * CACHE_TTL_DAYS * 86_400e3).toISOString();
-  const [planillas, limites, solar] = await Promise.all([store.purgeBillUploads(billPurgeBefore(Date.now())), store.pruneRateLimits(), store.clearSolarCache(solarBefore)]);
-  return { planillas_borradas: planillas, limites_limpiados: limites, cache_solar_borrada: solar };
+  // Documentos industriales que nunca se vincularon a una solicitud (el visitante no envió el formulario): 24 h.
+  const orphanBefore = new Date(Date.now() - 24 * 3600e3).toISOString();
+  const [planillas, limites, solar, documentos] = await Promise.all([store.purgeBillUploads(billPurgeBefore(Date.now())), store.pruneRateLimits(), store.clearSolarCache(solarBefore), store.purgeOrphanIndustrialDocs(orphanBefore)]);
+  return { planillas_borradas: planillas, limites_limpiados: limites, cache_solar_borrada: solar, documentos_huerfanos_borrados: documentos };
 }
 
 /** Verificación diaria en vivo de PVGIS-NSRDB, PVGIS-ERA5 y NASA POWER en Guayaquil (3 consultas, sin caché). */

@@ -33,7 +33,7 @@ export default async function SegmentPage({ params }: { params: Promise<{ segmen
           <h1 className="font-display mt-4 max-w-4xl [overflow-wrap:anywhere] text-4xl font-extrabold leading-[1.05] sm:text-6xl">{b.text('title')}</h1>
           <p className={`mt-6 max-w-2xl text-lg leading-relaxed ${industrial ? 'text-white/70' : 'text-muted'}`}>{b.text('lead')}</p>
           <div className="mt-8 flex flex-wrap gap-2">{b.list('audience').map((a) => <span key={a} className={`rounded-full border px-3 py-1 text-sm ${industrial ? 'border-white/15 text-white/75' : 'border-line text-muted'}`}>{a}</span>)}</div>
-          <div className="mt-10 flex flex-wrap gap-3"><Link href={`/calculadora?segmento=${s.slug}`} className="btn-primary">Calcular mi ahorro</Link><a href="#cotizar" className={industrial ? 'btn-ghost-dark' : 'btn-ghost'}>Solicitar propuesta</a></div>
+          <div className="mt-10 flex flex-wrap gap-3"><Link href={`/calculadora?segmento=${s.slug}`} className="btn-primary">Calcular mi ahorro</Link>{industrial ? <Link href="/cotizacion-industrial" className="btn-ghost-dark">Solicitar cotización industrial</Link> : <a href="#cotizar" className="btn-ghost">Solicitar propuesta</a>}</div>
         </div>
       </section>
 

@@ -6,7 +6,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { CalcParams, DEFAULT_PARAMS } from '../engine/params';
 import { DEFAULT_TARIFFS } from '../engine/default-tariffs';
 import type { Tariff } from '../engine/tariff';
-import type { Activity, BlogPost, BlogPostInput, BlogPostRecord, Brand, BrandAssetKind, BrandInput, BrandRecord, Consent, ContentBlockRow, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, ServiceInput, ServiceRow, StaffUser, StaffUserInput, Stat, Study, TierPrice, MediaBucket, BillUpload, PriceTier, TradeAccount, TradeApplicationInput, TradeReview, OutboundMessage, MessagePayload, CronRun } from './types';
+import type { Activity, BlogPost, BlogPostInput, BlogPostRecord, Brand, BrandAssetKind, BrandInput, BrandRecord, Consent, ContentBlockRow, Lead, LeadStage, MediaRef, Order, OrderStatus, Product, ProductInput, ProductRecord, Project, ProjectInput, ProjectRecord, ServiceInput, ServiceRow, StaffUser, StaffUserInput, Stat, Study, TierPrice, MediaBucket, BillUpload, PriceTier, TradeAccount, TradeApplicationInput, TradeReview, OutboundMessage, MessagePayload, CronRun, IndustrialDocument, IndustrialRequestRecord, IndustrialRequestInput } from './types';
 import { PAID_STATES } from './types';
 import { SEED_BRANDS, SEED_PRODUCTS, SEED_PROJECTS, SEED_STATS } from './seed';
 import { effectivePrice } from '../services/catalog';
@@ -164,6 +164,20 @@ export interface Store {
   startCronRun(trigger: CronRun['trigger'], actor: string | null): Promise<string>;
   finishCronRun(id: string, r: { ok: boolean; summary: Record<string, unknown>; error?: string | null }): Promise<void>;
   listCronRuns(limit?: number): Promise<CronRun[]>;
+  // ---- Cotización industrial (documentos en el bucket privado 'project-docs')
+  /** Guarda un documento ya validado, aún sin solicitud. Devuelve su id. */
+  saveIndustrialDoc(f: { bytes: Uint8Array; mime: string; ext: string; filename: string }): Promise<string>;
+  getIndustrialDocMeta(id: string): Promise<IndustrialDocument | null>;
+  /** Crea la solicitud y le vincula los documentos (solo los que aún no tienen solicitud). Devuelve el id. */
+  createIndustrialRequest(r: IndustrialRequestInput, docs: { id: string; kind: IndustrialDocument['kind'] }[]): Promise<string>;
+  listIndustrialRequests(): Promise<IndustrialRequestRecord[]>;
+  getIndustrialRequest(id: string): Promise<IndustrialRequestRecord | null>;
+  listIndustrialRequestsForLead(leadId: string): Promise<IndustrialRequestRecord[]>;
+  evaluateIndustrialRequest(id: string, e: { status: IndustrialRequestRecord['eval_status']; kwp: number | null; notes: string }, actor: string): Promise<void>;
+  /** Archivo (solo panel): bytes en desarrollo, URL firmada de corta duración en Supabase. */
+  getIndustrialDocFile(id: string): Promise<{ bytes: Uint8Array; mime: string; filename: string } | { signedUrl: string; mime: string; filename: string } | null>;
+  /** Borra documentos sin solicitud subidos antes de `before`. */
+  purgeOrphanIndustrialDocs(before: string): Promise<number>;
   // ---- Caché del recurso solar (una fila por celda y fuente)
   getSolarCache(cell: string, source: SourceId): Promise<SourceResult | null>;
   putSolarCache(cell: string, source: SourceId, r: SourceResult, at: { lat: number; lng: number; tilt: number }): Promise<void>;
@@ -193,6 +207,8 @@ type DevDb = {
   bills: (BillUpload & { path: string; mime: string })[];
   trade: DevTrade[];
   cron_runs: CronRun[];
+  industrial: Omit<IndustrialRequestRecord, 'documents' | 'lead_name' | 'advisor_id'>[];
+  industrial_docs: (IndustrialDocument & { path: string })[];
   solar_cache: Record<string, SourceResult & { cell: string; source: SourceId; lat: number; lng: number; tilt: number }>;
 };
 /** Cuenta comercial en el archivo local: contraseña scrypt y token de acceso guardado solo como hash. */
@@ -267,6 +283,12 @@ function devLegacyMessage(m: unknown): OutboundMessage {
     is_marketing: false, status, error: o.status === 'pendiente' ? `${o.error ?? ''} · sin cuerpo guardado (anterior a 0007)` : o.error ?? null,
     attempts: 0, created_at: o.at ?? new Date().toISOString(), sent_at: status === 'enviado' ? o.at ?? null : null, next_attempt_at: null, last_attempt_at: null,
   };
+}
+const DEV_PROJECT_DOCS = path.join(DEV_PRIVATE_DIR, 'project-docs');
+const devDocOut = ({ path: _p, ...d }: IndustrialDocument & { path: string }): IndustrialDocument => d;
+function devIndustrialRecord(db: DevDb, r: DevDb['industrial'][number]): IndustrialRequestRecord {
+  const lead = db.leads.find((l) => l.id === r.lead_id);
+  return { ...r, lead_name: lead?.full_name ?? null, advisor_id: lead?.advisor_id ?? null, documents: db.industrial_docs.filter((d) => d.request_id === r.id).map(devDocOut) };
 }
 function solarStats(rows: { cell: string; source: string; fetched_at: string }[]) {
   const dates = rows.map((r) => r.fetched_at).sort();
@@ -355,14 +377,14 @@ async function devLoad(): Promise<DevDb> {
   // Solo se crea una base nueva si el archivo no existe: un JSON dañado se reporta, nunca se sobrescribe con la semilla.
   if (raw != null) {
     const db = JSON.parse(raw) as DevDb;
-    db.media ??= []; db.content_blocks ??= []; db.services ??= []; db.posts ??= []; db.users ??= []; db.settings ??= {}; db.bills ??= []; db.trade ??= []; db.cron_runs ??= []; db.solar_cache ??= {};
+    db.media ??= []; db.content_blocks ??= []; db.services ??= []; db.posts ??= []; db.users ??= []; db.settings ??= {}; db.bills ??= []; db.trade ??= []; db.cron_runs ??= []; db.solar_cache ??= {}; db.industrial ??= []; db.industrial_docs ??= [];
     // Mensajes de archivos anteriores (sin id ni cuerpo): no se pueden reintentar.
     db.messages = (db.messages ?? []).map((m) => (m as Partial<OutboundMessage>).id ? m : devLegacyMessage(m));
     devState.cache = db;
   }
   else {
     devState.cache = { params: [{ ...DEFAULT_PARAMS, version: 1 }], tariffs: DEFAULT_TARIFFS.map((t) => ({ ...t, id: randomUUID() })), studies: [], leads: [], activities: [], consents: [],
-      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [], posts: [], users: [], settings: {}, bills: [], trade: [], cron_runs: [], solar_cache: {} };
+      products: SEED_PRODUCTS, orders: [], stats: SEED_STATS, projects: SEED_PROJECTS, brands: SEED_BRANDS, messages: [], events: [], seq: { study: 0, order: 999 }, rl: {}, media: [], content_blocks: [], services: [], posts: [], users: [], settings: {}, bills: [], trade: [], cron_runs: [], solar_cache: {}, industrial: [], industrial_docs: [] };
     await devSave();
   }
   return devState.cache!;
@@ -695,6 +717,45 @@ const devStore: Store = {
   startCronRun: (trigger, actor) => tx((db) => { const id = randomUUID(); db.cron_runs.push({ id, trigger, actor, started_at: new Date().toISOString(), finished_at: null, ok: null, summary: null, error: null }); return id; }),
   finishCronRun: (id, r) => tx((db) => { const c = db.cron_runs.find((x) => x.id === id); if (c) Object.assign(c, { finished_at: new Date().toISOString(), ok: r.ok, summary: r.summary, error: r.error ?? null }); db.cron_runs = db.cron_runs.slice(-200); }),
   listCronRuns: (limit = 20) => tx((db) => [...db.cron_runs].sort((a, b) => b.started_at.localeCompare(a.started_at)).slice(0, limit)),
+  saveIndustrialDoc: async (f) => {
+    const id = randomUUID();
+    const rel = `${id}.${f.ext}`;
+    await fs.mkdir(DEV_PROJECT_DOCS, { recursive: true });
+    await fs.writeFile(path.join(DEV_PROJECT_DOCS, rel), f.bytes);
+    return tx((db) => { db.industrial_docs.push({ id, request_id: null, kind: 'otro', filename: f.filename, mime: f.mime, size_bytes: f.bytes.length, created_at: new Date().toISOString(), path: rel }); return id; });
+  },
+  getIndustrialDocMeta: (id) => tx((db) => { const d = db.industrial_docs.find((x) => x.id === id); return d ? devDocOut(d) : null; }),
+  createIndustrialRequest: (r, docs) => tx((db) => {
+    const now = new Date().toISOString();
+    const id = randomUUID();
+    db.industrial.push({ ...r, id, eval_status: 'pendiente', eval_kwp: null, eval_notes: null, evaluated_by: null, evaluated_at: null, created_at: now, updated_at: now });
+    for (const d of docs) { const x = db.industrial_docs.find((y) => y.id === d.id && !y.request_id); if (x) { x.request_id = id; x.kind = d.kind; } }
+    return id;
+  }),
+  listIndustrialRequests: () => tx((db) => [...db.industrial].sort((a, b) => b.created_at.localeCompare(a.created_at)).map((r) => devIndustrialRecord(db, r))),
+  getIndustrialRequest: (id) => tx((db) => { const r = db.industrial.find((x) => x.id === id); return r ? devIndustrialRecord(db, r) : null; }),
+  listIndustrialRequestsForLead: (leadId) => tx((db) => db.industrial.filter((r) => r.lead_id === leadId).map((r) => devIndustrialRecord(db, r))),
+  evaluateIndustrialRequest: (id, e, actor) => tx((db) => {
+    const r = db.industrial.find((x) => x.id === id);
+    if (!r) throw new Error('Solicitud no encontrada.');
+    const closed = e.status === 'evaluada' || e.status === 'descartada';
+    Object.assign(r, { eval_status: e.status, eval_kwp: e.kwp, eval_notes: e.notes || null, updated_at: new Date().toISOString(),
+      evaluated_by: closed ? actor : r.evaluated_by, evaluated_at: closed ? new Date().toISOString() : r.evaluated_at });
+  }),
+  getIndustrialDocFile: async (id) => {
+    const d = await tx((db) => db.industrial_docs.find((x) => x.id === id) ?? null);
+    if (!d) return null;
+    try { return { bytes: new Uint8Array(await fs.readFile(path.join(DEV_PROJECT_DOCS, d.path))), mime: d.mime, filename: d.filename }; } catch { return null; }
+  },
+  purgeOrphanIndustrialDocs: async (before) => {
+    const gone = await tx((db) => {
+      const old = db.industrial_docs.filter((d) => !d.request_id && d.created_at < before);
+      db.industrial_docs = db.industrial_docs.filter((d) => !old.includes(d));
+      return old.map((d) => d.path);
+    });
+    for (const rel of gone) await fs.rm(path.join(DEV_PROJECT_DOCS, rel), { force: true });
+    return gone.length;
+  },
   getSolarCache: (cell, source) => tx((db) => { const r = db.solar_cache[`${cell}#${source}`]; return r ? { monthlyYieldPreLoss: r.monthlyYieldPreLoss, monthlyPoaKwhM2: r.monthlyPoaKwhM2, period: r.period, fetchedAt: r.fetchedAt } : null; }),
   putSolarCache: (cell, source, r, at) => tx((db) => { db.solar_cache[`${cell}#${source}`] = { ...r, cell, source, ...at }; }),
   solarCacheStats: () => tx((db) => solarStats(Object.values(db.solar_cache).map((r) => ({ cell: r.cell, source: r.source, fetched_at: r.fetchedAt })))),
@@ -724,6 +785,15 @@ function must<T>(r: { data: T | null; error: { message: string } | null }): T {
 const PUBLIC_BUCKET = 'public-media';
 const PRIVATE_BUCKET = 'private-docs';
 const BILLS_BUCKET = 'bills';
+const PROJECT_DOCS_BUCKET = 'project-docs';
+const DOC_COLS = 'id, request_id, kind, filename, mime, size_bytes, created_at';
+const INDUSTRIAL_SELECT = `*, leads(full_name, advisor_id), industrial_documents(${DOC_COLS})`;
+function mapIndustrial(rows: any[]): IndustrialRequestRecord[] {
+  return rows.map(({ leads, industrial_documents, ...r }) => ({
+    ...r, eval_kwp: r.eval_kwp == null ? null : Number(r.eval_kwp), lead_name: leads?.full_name ?? null, advisor_id: leads?.advisor_id ?? null,
+    documents: ((industrial_documents ?? []) as IndustrialDocument[]).sort((a, b) => a.created_at.localeCompare(b.created_at)),
+  }));
+}
 const TRADE_COLS = 'id, company, ruc, tier, contact_name, email, phone, city, notes, status, review_note, reviewed_at, approved_by, user_id, lead_id, created_at, updated_at';
 /** Mapea filas de trade_accounts; «activated» = el usuario de Auth confirmó su correo (fijó contraseña con el enlace). */
 async function mapTrade(rows: any[]): Promise<TradeAccount[]> {
@@ -1282,6 +1352,55 @@ const supabaseStore: Store = {
   },
   async finishCronRun(id, r) { must(await sb().from('cron_runs').update({ finished_at: new Date().toISOString(), ok: r.ok, summary: r.summary, error: r.error ?? null }).eq('id', id)); },
   async listCronRuns(limit = 20) { return must(await sb().from('cron_runs').select('*').order('started_at', { ascending: false }).limit(limit)) as CronRun[]; },
+  async saveIndustrialDoc(f) {
+    const c = sb();
+    const p = `${new Date().toISOString().slice(0, 7)}/${randomUUID()}.${f.ext}`;
+    const up = await c.storage.from(PROJECT_DOCS_BUCKET).upload(p, f.bytes, { contentType: f.mime, upsert: false, cacheControl: '0' });
+    if (up.error) throw new Error(`No se pudo guardar el documento: ${up.error.message}`);
+    const r = await c.from('industrial_documents').insert({ filename: f.filename, mime: f.mime, size_bytes: f.bytes.length, storage_path: p }).select('id').single();
+    if (r.error) { await c.storage.from(PROJECT_DOCS_BUCKET).remove([p]); throw new Error(r.error.message); }
+    return (r.data as { id: string }).id;
+  },
+  async getIndustrialDocMeta(id) {
+    if (!isUuid(id)) return null;
+    return must(await sb().from('industrial_documents').select(DOC_COLS).eq('id', id).maybeSingle()) as IndustrialDocument | null;
+  },
+  async createIndustrialRequest(r, docs) {
+    const c = sb();
+    const ins = must(await c.from('industrial_requests').insert(r).select('id').single()) as { id: string };
+    // Solo documentos aún sin solicitud: un id no se puede «robar» para otra solicitud.
+    for (const d of docs) must(await c.from('industrial_documents').update({ request_id: ins.id, kind: d.kind }).eq('id', d.id).is('request_id', null));
+    return ins.id;
+  },
+  async listIndustrialRequests() { return mapIndustrial(must(await sb().from('industrial_requests').select(INDUSTRIAL_SELECT).order('created_at', { ascending: false }).limit(500)) as any[]); },
+  async getIndustrialRequest(id) {
+    if (!isUuid(id)) return null;
+    const r = must(await sb().from('industrial_requests').select(INDUSTRIAL_SELECT).eq('id', id).maybeSingle());
+    return r ? mapIndustrial([r])[0] : null;
+  },
+  async listIndustrialRequestsForLead(leadId) { return mapIndustrial(must(await sb().from('industrial_requests').select(INDUSTRIAL_SELECT).eq('lead_id', leadId)) as any[]); },
+  async evaluateIndustrialRequest(id, e, actor) {
+    const closed = e.status === 'evaluada' || e.status === 'descartada';
+    const patch: Record<string, unknown> = { eval_status: e.status, eval_kwp: e.kwp, eval_notes: e.notes || null, updated_at: new Date().toISOString() };
+    if (closed) Object.assign(patch, { evaluated_by: isUuid(actor) ? actor : null, evaluated_at: new Date().toISOString() });
+    must(await sb().from('industrial_requests').update(patch).eq('id', id));
+  },
+  async getIndustrialDocFile(id) {
+    if (!isUuid(id)) return null;
+    const d = must(await sb().from('industrial_documents').select('storage_path, mime, filename').eq('id', id).maybeSingle()) as { storage_path: string; mime: string; filename: string } | null;
+    if (!d) return null;
+    const r = await sb().storage.from(PROJECT_DOCS_BUCKET).createSignedUrl(d.storage_path, 60, { download: d.filename });
+    return r.error || !r.data ? null : { signedUrl: r.data.signedUrl, mime: d.mime, filename: d.filename };
+  },
+  async purgeOrphanIndustrialDocs(before) {
+    const c = sb();
+    const rows = must(await c.from('industrial_documents').select('id, storage_path').is('request_id', null).lt('created_at', before).limit(500)) as { id: string; storage_path: string }[];
+    if (!rows.length) return 0;
+    const rm = await c.storage.from(PROJECT_DOCS_BUCKET).remove(rows.map((r) => r.storage_path));
+    if (rm.error) throw new Error(`No se pudieron borrar los documentos: ${rm.error.message}`);
+    must(await c.from('industrial_documents').delete().in('id', rows.map((r) => r.id)));
+    return rows.length;
+  },
   async getSolarCache(cell, source) {
     const r = must(await sb().from('solar_resource_cache').select('monthly_kwh_per_kwp, monthly_poa_kwh_m2, period, fetched_at').eq('cell', cell).eq('source', source).maybeSingle()) as
       { monthly_kwh_per_kwp: (number | string)[]; monthly_poa_kwh_m2: (number | string)[] | null; period: string | null; fetched_at: string } | null;

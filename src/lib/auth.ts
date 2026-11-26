@@ -32,6 +32,8 @@ export const PERMS = {
   identity: ['superadmin', 'marketing'],   // RLS: site_settings
   settings: ['superadmin', 'marketing'],   // RLS: site_settings (contact, notifications, integrations_public)
   bills: ['superadmin', 'gerencia', 'ingenieria', 'ventas'],
+  industrial: ['superadmin', 'gerencia', 'ingenieria', 'ventas'],   // RLS: industrial_requests/documents, bucket project-docs (0009)
+  industrial_eval: ['superadmin', 'gerencia', 'ingenieria'],   // RLS: industrial_requests update (0009)
   trade: ['superadmin', 'gerencia', 'ventas'],   // RLS: trade_accounts (0002)
   trade_approve: ['superadmin', 'gerencia'],
   messages: ['superadmin', 'gerencia'],   // RLS: outbound_messages (0002), cron_runs (0007)

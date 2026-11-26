@@ -30,7 +30,7 @@
 - ✅ Pantalla del panel para contacto (WhatsApp, correo, teléfono, dirección, horario, mapa, redes), correo de avisos internos e IDs de analítica; estado de las integraciones del servidor.
 - ✅ Formularios guiados para parámetros y tarifas, con reglas de coherencia, vista previa de factura y validación por Gerencia.
 - ✅ Carga de planilla eléctrica en PDF o foto con lectura por IA (API de Claude) y revisión y confirmación del cliente antes de calcular; planilla visible en la ficha del lead (migración `0005`). Requiere `ANTHROPIC_API_KEY`; las planillas sin lead se borran a los 7 días.
-- Flujo industrial con carga de documentos (curva de carga, planos).
+- ✅ Flujo de cotización industrial: soluciones, datos energéticos y documentos (planillas, curva de carga, planos) en almacenamiento privado; lead y solicitud en el CRM con evaluación de ingeniería (migración `0009`).
 - ✅ Cuentas de instaladores y distribuidores: solicitud con RUC, aprobación por Gerencia, acceso propio y precios de su nivel en tienda, carrito y pedidos (migración `0006`).
 - ✅ Recordatorios automáticos de seguimiento (resumen diario por asesor, leads sin contactar, aviso de asignación), reintento de la cola de correos y depuración de planillas (tarea programada, migración `0007`).
 - ✅ Caché del recurso solar por celda y fuente, validación de respuestas y verificación en vivo de PVGIS-NSRDB, PVGIS-ERA5 y NASA POWER (panel, tarea diaria y `npm run test:live`; migración `0008`).

@@ -1,6 +1,6 @@
 export type Segment = 'residencial' | 'comercial' | 'industrial';
 export type LeadStage = 'nuevo' | 'contactado' | 'calificado' | 'visita_tecnica' | 'cotizacion_enviada' | 'negociacion' | 'ganado' | 'perdido';
-export type LeadSource = 'calculadora' | 'tienda' | 'contacto' | 'cotizacion' | 'catalogo' | 'financiamiento' | 'capacitacion' | 'campana' | 'servicio' | 'cuenta_comercial';
+export type LeadSource = 'calculadora' | 'tienda' | 'contacto' | 'cotizacion' | 'catalogo' | 'financiamiento' | 'capacitacion' | 'campana' | 'servicio' | 'cuenta_comercial' | 'cotizacion_industrial';
 export type OrderStatus = 'nuevo' | 'pendiente_contacto' | 'contactado' | 'cotizado' | 'confirmado' | 'pagado' | 'en_preparacion' | 'despachado' | 'entregado' | 'cancelado';
 export type AppRole = 'superadmin' | 'gerencia' | 'marketing' | 'ventas' | 'ingenieria' | 'compras';
 
@@ -105,6 +105,22 @@ export type OutboundMessage = {
 export type CronRun = {
   id: string; trigger: 'cron' | 'panel'; actor: string | null; started_at: string; finished_at: string | null;
   ok: boolean | null; summary: Record<string, unknown> | null; error: string | null;
+};
+
+/** Documento de una cotización industrial (bucket privado project-docs). */
+export type IndustrialDocument = {
+  id: string; request_id: string | null; kind: 'planilla' | 'curva_carga' | 'plano' | 'otro';
+  filename: string; mime: string; size_bytes: number; created_at: string;
+};
+export type IndustrialRequestInput = {
+  lead_id: string; solutions: string[]; company: string; ruc: string | null; sector: string;
+  details: { monthlyKwh: number | null; monthlyBillUsd: number | null; demandKw: number | null; voltage: string; hours: string | null;
+    areaM2: number | null; site: string; message: string; province: string; city: string; position: string };
+};
+export type IndustrialRequestRecord = IndustrialRequestInput & {
+  id: string; eval_status: 'pendiente' | 'en_evaluacion' | 'evaluada' | 'descartada'; eval_kwp: number | null; eval_notes: string | null;
+  evaluated_by: string | null; evaluated_at: string | null; created_at: string; updated_at: string;
+  lead_name: string | null; advisor_id: string | null; documents: IndustrialDocument[];
 };
 
 export type Stat = { id: string; label: string; value: number; unit: string | null; source_note: string; verified: boolean; sort: number };

@@ -45,6 +45,8 @@ export default defineConfig({
       SALES_NOTIFY_EMAIL: 'ventas@energysolec.test',
       APP_SECRET: 'e2e-app-secret',
       NEXT_TELEMETRY_DISABLED: '1',
+      // La suite compila más de 60 rutas en `next dev`; con el límite por defecto el servidor se cayó una vez al final.
+      NODE_OPTIONS: '--max-old-space-size=4096',
     },
   },
 });

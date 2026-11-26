@@ -7,6 +7,7 @@ import { fmtKwp, fmtUsd } from '@/lib/format';
 import { waLink } from '@/lib/site';
 import { staffNames } from '@/lib/staff-names';
 import { BillPanel } from './bill-panel';
+import { IndustrialPanel } from './industrial-panel';
 import { fmtEc, toEcLocal } from '@/lib/services/followup';
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
@@ -18,6 +19,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   if (!l || (staff.role === 'ventas' && l.advisor_id && l.advisor_id !== staff.id)) notFound();
   const editable = can(staff, 'leads_edit');
   const bills = can(staff, 'bills') ? await store.listBillUploadsForLead(l.id) : [];
+  const industrial = can(staff, 'industrial') ? await store.listIndustrialRequestsForLead(l.id) : [];
   const info: [string, string | null | undefined][] = [
     ['Correo', l.email], ['WhatsApp', l.phone], ['Empresa', l.company], ['Segmento', l.segment], ['Ubicación', [l.city, l.province].filter(Boolean).join(', ')],
     ['Consumo mensual', l.monthly_kwh ? `${l.monthly_kwh} kWh` : null], ['Factura mensual', l.monthly_bill_usd ? fmtUsd(l.monthly_bill_usd) : null],
@@ -36,6 +38,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           <a className="btn-ghost !py-2" href={`mailto:${l.email}`}>Correo</a>
         </div>
         <dl className="card mt-6 divide-y divide-line text-sm">{info.filter(([, v]) => v).map(([k, v]) => <div key={k} className="flex gap-4 px-5 py-3"><dt className="w-44 shrink-0 text-muted">{k}</dt><dd className="whitespace-pre-line">{v}</dd></div>)}</dl>
+        {industrial.map((r) => <IndustrialPanel key={r.id} r={r} canEval={can(staff, 'industrial_eval')} evaluatorName={r.evaluated_by ? nameOf(r.evaluated_by) : null} />)}
         {bills.length > 0 && <BillPanel bills={bills} />}
         <h2 className="mt-8 font-semibold">Historial de seguimiento</h2>
         <ol className="mt-3 space-y-3">{acts.map((a) => <li key={a.id} className="card p-4 text-sm"><p className="text-xs text-muted">{fmtEc(a.at)} · {a.kind}{a.actor ? ` · ${nameOf(a.actor)}` : ''}</p><p className="mt-1 whitespace-pre-line">{a.body}</p></li>)}</ol>

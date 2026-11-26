@@ -1,6 +1,6 @@
 import { expect, expectNoOverflow, tag, test } from './helpers';
 
-const PAGES = ['/', '/tienda', '/calculadora', '/proyectos', '/servicios', '/marcas', '/blog', '/nosotros', '/contacto', '/financiamiento', '/profesionales', '/privacidad'];
+const PAGES = ['/', '/tienda', '/calculadora', '/proyectos', '/servicios', '/marcas', '/blog', '/nosotros', '/contacto', '/financiamiento', '/profesionales', '/cotizacion-industrial', '/privacidad'];
 
 test.describe('sitio público', () => {
   for (const path of PAGES) {

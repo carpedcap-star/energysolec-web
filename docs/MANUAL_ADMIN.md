@@ -21,6 +21,8 @@ Acceso: `https://www.energysolec.com/admin/login` con el usuario que te asigne e
 | Mensajes y tareas | ✓ | ✓ | | | | |
 | Recurso solar | ✓ | ✓ | | | ✓ | |
 | Contacto e integraciones | ✓ | | ✓ | | | |
+| Cotizaciones industriales (ver) | ✓ | ✓ | | sus leads y sin asignar | ✓ | |
+| Evaluación de ingeniería | ✓ | ✓ | | | ✓ | |
 
 ## CRM
 
@@ -175,6 +177,14 @@ Acceso: `https://www.energysolec.com/admin/login` con el usuario que te asigne e
 - En **Recurso solar** ves cuántas zonas hay guardadas y el resultado de la verificación diaria. **Verificar fuentes ahora** consulta en vivo las tres fuentes en Guayaquil, Quito y Puerto Baquerizo Moreno. Una falla aislada suele ser pasajera; si una fuente falla varios días seguidos, avisa a Ingeniería.
 - **Vaciar caché** obliga a volver a consultar las fuentes, por ejemplo si una de ellas publica datos nuevos.
 - Si ninguna fuente responde, el estudio usa el rendimiento regional de **Parámetros** y se lo advierte al cliente.
+
+## Cotizaciones industriales
+
+- Las empresas solicitan en **/cotizacion-industrial** (botón «Solicitar cotización industrial» en la página Industrial): soluciones de interés, datos de la empresa y de consumo, y documentos (planillas, curva de carga, planos) de hasta 4 MB cada uno. Si sus planos pesan más, pídeselos por correo.
+- Cada solicitud crea un lead (fuente «cotización industrial»), avisa al correo comercial y aparece en **Cotizaciones industriales**.
+- En la ficha del lead, la sección **Solicitud industrial** muestra los datos y los documentos: PDF e imágenes se abren en el navegador; Excel, CSV y DWG se descargan. Son documentos de la empresa cliente: no los reenvíes fuera del equipo.
+- Ingeniería registra la **evaluación**: estado, potencia estimada y criterio. Para cerrarla como «Evaluada» o «No viable» hay que escribir el criterio. Cada cambio de estado queda en el historial del lead.
+- Los documentos de quien no llegó a enviar el formulario se borran a las 24 horas.
 
 ## Contacto e integraciones
 

@@ -122,7 +122,7 @@ const JOB_LABEL: Record<string, string> = { mensajes: 'Correos', recordatorios: 
 const SUMMARY_LABEL: Record<string, string> = {
   enviados: 'enviados', reprogramados: 'reprogramados', fallidos: 'fallidos', vencidos: 'vencidos', bloqueados: 'sin consentimiento',
   resumenes: 'resúmenes', actividades: 'actividades', sin_contactar: 'sin contactar', sin_destinatario: 'sin destinatario',
-  planillas_borradas: 'planillas borradas', limites_limpiados: 'límites limpiados', cache_solar_borrada: 'celdas de caché solar borradas',
+  planillas_borradas: 'planillas borradas', limites_limpiados: 'límites limpiados', cache_solar_borrada: 'celdas de caché solar borradas', documentos_huerfanos_borrados: 'documentos sin solicitud borrados',
   fuentes_ok: 'correctas', fuentes_con_falla: 'con falla',
 };
 /** «Correos: 2 enviados · Recordatorios: 1 resúmenes, 3 actividades · …» para el panel. */

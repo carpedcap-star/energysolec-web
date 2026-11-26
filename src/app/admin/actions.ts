@@ -26,6 +26,7 @@ import { runJobs } from '@/lib/services/cron-jobs';
 import { parseEcLocal } from '@/lib/services/followup';
 import { checkSources, type SourceCheck } from '@/lib/engine/resource';
 import { parseSettingsForm } from '@/lib/services/site-settings';
+import { canEvalTransition, EVAL_STATUS, EvaluationSchema } from '@/lib/services/industrial';
 
 export async function loginAction(_: unknown, fd: FormData) {
   const err = await signIn(String(fd.get('email') ?? ''), String(fd.get('password') ?? ''), (fd.get('role') as AppRole) || 'superadmin');
@@ -686,4 +687,21 @@ export async function saveSettingsAction(_: unknown, fd: FormData): Promise<{ er
   } catch (e) { return { error: (e as Error).message }; }
   revalidatePath('/', 'layout'); // el contacto aparece en todas las páginas (pie, botón de WhatsApp, datos estructurados)
   redirect('/admin/configuracion?guardado=1');
+}
+
+// ---------------------------------------------------------------- Cotizaciones industriales
+export async function evaluateIndustrialAction(id: string, _: unknown, fd: FormData): Promise<{ error?: string; ok?: boolean }> {
+  const staff = await requireStaff('industrial_eval');
+  const kwpRaw = String(fd.get('kwp') ?? '').replace(',', '.').trim();
+  const p = EvaluationSchema.safeParse({ status: fd.get('status'), kwp: kwpRaw === '' ? null : Number(kwpRaw), notes: String(fd.get('notes') ?? '') });
+  if (!p.success) return { error: p.error.issues[0]?.message ?? 'Datos no válidos' };
+  const store = getStore();
+  const r = await store.getIndustrialRequest(id);
+  if (!r) return { error: 'Solicitud no encontrada.' };
+  if (!canEvalTransition(r.eval_status, p.data.status)) return { error: `No se puede pasar de «${EVAL_STATUS[r.eval_status]}» a «${EVAL_STATUS[p.data.status]}».` };
+  try { await store.evaluateIndustrialRequest(id, p.data, staff.id); } catch (e) { return { error: (e as Error).message }; }
+  if (p.data.status !== r.eval_status)
+    await store.addActivity(r.lead_id, 'ingenieria', `Evaluación de ingeniería: ${EVAL_STATUS[p.data.status]}${p.data.kwp ? ` · ${p.data.kwp} kWp estimados` : ''}${p.data.notes ? `\n${p.data.notes}` : ''}`, staff.id).catch(() => {});
+  revalidatePath(`/admin/leads/${r.lead_id}`); revalidatePath('/admin/industrial');
+  return { ok: true };
 }
