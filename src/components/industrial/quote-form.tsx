@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { PROVINCES } from '@/lib/ecuador';
 import { DOC_KINDS, DOC_MAX_FILES, INDUSTRIAL_SOLUTIONS, OPERATING_HOURS, SECTORS, VOLTAGE_LEVELS, type DocKind } from '@/lib/services/industrial';
 import { getUtm, track } from '../consent';
+import { TURNSTILE_ERROR, useTurnstile } from '@/components/turnstile';
+import { TURNSTILE_ACTIONS } from '@/lib/turnstile';
 
 type Doc = { id: string; filename: string; size: number; type: string; kind: DocKind };
 const fmtSize = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
@@ -30,6 +32,8 @@ export function IndustrialQuoteForm() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [done, setDone] = useState(false);
+  const humanDoc = useTurnstile(TURNSTILE_ACTIONS.industrialDoc);
+  const human = useTurnstile(TURNSTILE_ACTIONS.industrial);
   const fileRef = useRef<HTMLInputElement>(null);
   const errRef = useRef<HTMLParagraphElement>(null);
 
@@ -39,7 +43,10 @@ export function IndustrialQuoteForm() {
     for (const f of Array.from(files)) {
       if (docs.length >= DOC_MAX_FILES) { setDocErr(`Máximo ${DOC_MAX_FILES} documentos.`); break; }
       setUploading(f.name);
+      const turnstileToken = await humanDoc.getToken().catch(() => null);
+      if (turnstileToken === null) { setDocErr(TURNSTILE_ERROR); break; }
       const fd = new FormData();
+      if (turnstileToken) fd.set('turnstileToken', turnstileToken);
       fd.set('file', f); fd.set('consent', 'on'); fd.set('website', '');
       const r = await fetch('/api/industrial/upload', { method: 'POST', body: fd }).catch(() => null);
       const j = await r?.json().catch(() => null);
@@ -55,12 +62,14 @@ export function IndustrialQuoteForm() {
     const f = new FormData(e.currentTarget);
     const n = (k: string) => { const v = String(f.get(k) ?? '').replace(',', '.').trim(); return v === '' ? null : Number(v); };
     setBusy(true); setErr('');
+    const turnstileToken = await human.getToken().catch(() => null);
+    if (turnstileToken === null) { setBusy(false); setErr(TURNSTILE_ERROR); requestAnimationFrame(() => errRef.current?.focus()); return; }
     const r = await fetch('/api/industrial', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       solutions: f.getAll('solutions'), company: f.get('company'), ruc: f.get('ruc') ?? '', sector: f.get('sector') ?? '', province: f.get('province'), city: f.get('city') ?? '',
       monthlyKwh: n('monthlyKwh'), monthlyBillUsd: n('monthlyBillUsd'), demandKw: n('demandKw'), voltage: f.get('voltage') || 'no_se', hours: f.get('hours') || undefined,
       areaM2: n('areaM2'), site: f.get('site') ?? '', message: f.get('message') ?? '', documents: docs.map((d) => ({ id: d.id, kind: d.kind })),
       name: f.get('name'), position: f.get('position') ?? '', email: f.get('email'), phone: f.get('phone'),
-      acceptPrivacy: privacy, acceptMarketing: f.get('marketing') === 'on', utm: getUtm(), website: f.get('website') || '',
+      acceptPrivacy: privacy, acceptMarketing: f.get('marketing') === 'on', utm: getUtm(), website: f.get('website') || '', turnstileToken,
     }) }).catch(() => null);
     setBusy(false);
     if (!r?.ok) { setErr((await r?.json().catch(() => null))?.error ?? 'No se pudo enviar la solicitud. Inténtalo de nuevo.'); requestAnimationFrame(() => errRef.current?.focus()); return; }
@@ -137,6 +146,7 @@ export function IndustrialQuoteForm() {
               className="block w-full max-w-full text-sm file:mr-3 file:rounded-full file:border-0 file:bg-brand-dark file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white disabled:opacity-50" /></div>
         </div>
         <p className="mt-2 text-sm text-muted" aria-live="polite">{uploading ? `Subiendo «${uploading}»…` : ''}</p>
+        {humanDoc.slot && <div className="mt-3">{humanDoc.slot}</div>}
         {docErr && <p className="mt-2 text-sm text-red-600" role="alert">{docErr}</p>}
         {docs.length > 0 && (
           <ul className="mt-3 divide-y divide-line rounded-xl border border-line text-sm" aria-label="Documentos adjuntos">
@@ -151,6 +161,7 @@ export function IndustrialQuoteForm() {
         )}
       </Box>
 
+      {human.slot}
       {err && <p ref={errRef} tabIndex={-1} className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 outline-none" role="alert">{err}</p>}
       <button className="btn-primary w-full sm:w-auto" disabled={busy || !!uploading}>{busy ? 'Enviando…' : 'Enviar solicitud de cotización'}</button>
     </form>

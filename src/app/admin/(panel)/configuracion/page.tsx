@@ -11,7 +11,7 @@ const SERVER_INTEGRATIONS: [string, string[], string][] = [
   ['Base de datos (Supabase)', ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'], 'Sin ella, el sitio usa el archivo local de desarrollo.'],
   ['Correo transaccional (Resend)', ['RESEND_API_KEY'], 'Sin él, los correos quedan en cola.'],
   ['WhatsApp Business Cloud API', ['WHATSAPP_CLOUD_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'], 'Sin ella, los pedidos usan el enlace wa.me.'],
-  ['Protección anti-spam (Turnstile)', ['TURNSTILE_SECRET_KEY', 'NEXT_PUBLIC_TURNSTILE_SITE_KEY'], 'Opcional; los formularios usan además un campo trampa.'],
+  ['Protección anti-spam (Turnstile)', ['NEXT_PUBLIC_TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY'], 'Sin ella, los formularios solo tienen el campo trampa y el límite por IP. Necesita las dos claves.'],
   ['Lectura de planillas con IA (Anthropic)', ['ANTHROPIC_API_KEY'], 'Sin ella, la calculadora no ofrece subir planilla.'],
   ['Tareas programadas', ['CRON_SECRET'], 'Sin ella, las tareas diarias no corren solas.'],
 ];
@@ -31,11 +31,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ g
         <p className="mt-1 text-sm text-muted">Usan claves secretas: se configuran en las variables de entorno del alojamiento (Vercel), nunca en el panel. Aquí solo se ve si están activas.</p>
         <ul className="mt-4 divide-y divide-line text-sm">
           {SERVER_INTEGRATIONS.map(([name, vars, hint]) => {
-            const ok = vars.every((v) => !!process.env[v]);
+            const ok = vars.every((v) => !!process.env[v]?.trim());
+            const partial = !ok && vars.some((v) => !!process.env[v]?.trim());
             return (
               <li key={name} className="flex gap-3 py-3">
-                <span aria-hidden className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${ok ? 'bg-green-600' : 'bg-amber-500'}`} />
-                <span className="min-w-0"><b>{name}</b>: {ok ? 'activa' : 'no configurada'}
+                <span aria-hidden className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${ok ? 'bg-green-600' : partial ? 'bg-red-600' : 'bg-amber-500'}`} />
+                <span className="min-w-0"><b>{name}</b>: {ok ? 'activa' : partial ? 'INCOMPLETA (falta una variable; se ignora hasta completarla)' : 'no configurada'}
                   <span className="block text-xs text-muted [overflow-wrap:anywhere]">{ok ? vars.join(', ') : `${hint} Variables: ${vars.join(', ')}.`}</span></span>
               </li>
             );

@@ -34,7 +34,7 @@ jobs:
   e2e:
     name: Extremo a extremo (Playwright, escritorio y móvil)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,12 +45,15 @@ jobs:
       - run: npx playwright install --with-deps chromium
       # El servidor (next dev con base propia) lo levanta playwright.config.ts. Sin claves: ni Supabase, ni correo, ni IA.
       - run: npm run e2e
+      # Turnstile real con las claves de prueba públicas de Cloudflare (widget y siteverify).
+      - run: npm run e2e:turnstile
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: reporte-playwright
           path: |
             playwright-report/
+            playwright-report-turnstile/
             test-results/
           retention-days: 14
 
@@ -80,6 +83,8 @@ jobs:
       - run: npm run test:supabase
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e:supabase
+      # Archivos SQL para el SQL Editor (supabase/produccion/): al día con las migraciones y probados en una base limpia.
+      - run: scripts/probar-sql-produccion.sh
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

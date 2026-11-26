@@ -1,5 +1,6 @@
 import { getStore } from '@/lib/data/store';
 import { clientMeta, guard, json, verifyHuman } from '@/lib/request';
+import { TURNSTILE_ACTIONS } from '@/lib/turnstile';
 import { firstError } from '@/lib/schemas';
 import { canLinkDoc, docKindLabel, IndustrialRequest, OPERATING_HOURS, solutionLabel, VOLTAGE_LEVELS } from '@/lib/services/industrial';
 import { esc, notifySales, sendEmail } from '@/lib/services/messaging';
@@ -14,7 +15,7 @@ export async function POST(req: Request) {
   const p = IndustrialRequest.safeParse(await req.json().catch(() => null));
   if (!p.success) return json({ error: firstError(p.error) }, 400);
   const b = p.data;
-  if (!(await verifyHuman(b.turnstileToken, b.website))) return json({ error: 'No pudimos verificar el envío. Recarga la página.' }, 400);
+  if (!(await verifyHuman(b.turnstileToken, b.website, TURNSTILE_ACTIONS.industrial))) return json({ error: 'No pudimos verificar el envío. Recarga la página.' }, 400);
 
   const store = getStore();
   // Cada documento debe existir, estar libre y ser reciente: un id ajeno o viejo no se puede vincular.

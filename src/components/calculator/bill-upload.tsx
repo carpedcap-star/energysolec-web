@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { BILL_CONSENT_TEXT } from '@/lib/services/bill-consent';
 import type { BillCalcInput } from '@/lib/services/bill';
 import { track } from '../consent';
+import { TURNSTILE_ERROR, useTurnstile } from '@/components/turnstile';
+import { TURNSTILE_ACTIONS } from '@/lib/turnstile';
 
 export type BillRead = {
   distributor: string | null; tariffCategory: string | null; billingPeriod: string | null; energyKwh: number | null;
@@ -36,6 +38,7 @@ export function BillUpload({ mode, result, onRead, onDiscard }: { mode: string; 
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const human = useTurnstile(TURNSTILE_ACTIONS.bill);
 
   async function read() {
     if (!file) return setErr('Selecciona el archivo de tu planilla.');
@@ -43,7 +46,10 @@ export function BillUpload({ mode, result, onRead, onDiscard }: { mode: string; 
     setBusy(true); setErr('');
     const blob = await shrinkImage(file);
     if (blob.size > MAX_BYTES) { setBusy(false); return setErr('El archivo supera el máximo de 4 MB. Si es un PDF escaneado, súbelo como foto.'); }
+    const turnstileToken = await human.getToken().catch(() => null);
+    if (turnstileToken === null) { setBusy(false); return setErr(TURNSTILE_ERROR); }
     const fd = new FormData();
+    if (turnstileToken) fd.set('turnstileToken', turnstileToken);
     fd.set('file', blob, file.name); fd.set('consent', 'on'); fd.set('mode', mode); fd.set('website', '');
     track('bill_upload', { mode });
     const r = await fetch('/api/bill', { method: 'POST', body: fd }).catch(() => null);
@@ -96,6 +102,7 @@ export function BillUpload({ mode, result, onRead, onDiscard }: { mode: string; 
         <input type="checkbox" checked={consent} onChange={(e) => { setConsent(e.target.checked); setErr(''); }} className="mt-1" />
         <span>{BILL_CONSENT_TEXT} Ver la <Link href="/privacidad" target="_blank" className="underline">política de privacidad</Link>.</span>
       </label>
+      {human.slot && <div className="mt-3">{human.slot}</div>}
       {err && <p className="mt-3 text-red-600" role="alert">{err}</p>}
       <button type="button" onClick={read} disabled={busy} className="btn-dark mt-4 !py-2">{busy ? 'Leyendo tu planilla… puede tardar hasta un minuto' : 'Leer mi planilla'}</button>
       <p className="mt-3 text-xs text-muted">Si prefieres, ingresa los datos manualmente abajo.</p>

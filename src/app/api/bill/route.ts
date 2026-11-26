@@ -1,5 +1,6 @@
 import { getStore } from '@/lib/data/store';
 import { clientMeta, guard, json, verifyHuman } from '@/lib/request';
+import { TURNSTILE_ACTIONS } from '@/lib/turnstile';
 import { BILL_CONSENT_VERSION, BILL_LIMITS, checkBillFile, sanitizeExtraction, toCalculatorInput } from '@/lib/services/bill';
 import { billAiEnabled, extractBill } from '@/lib/services/bill-extractor';
 import { SITE } from '@/lib/site';
@@ -22,7 +23,7 @@ export async function POST(req: Request) {
 
   const fd = await req.formData().catch(() => null);
   if (!fd) return json({ error: 'Solicitud no válida.' }, 400);
-  if (!(await verifyHuman(String(fd.get('turnstileToken') ?? '') || undefined, String(fd.get('website') ?? '') || undefined)))
+  if (!(await verifyHuman(String(fd.get('turnstileToken') ?? '') || undefined, String(fd.get('website') ?? '') || undefined, TURNSTILE_ACTIONS.bill)))
     return json({ error: 'No pudimos verificar el envío. Recarga la página.' }, 400);
   // LOPDP: la planilla tiene datos personales y la procesa un tercero; el consentimiento es previo y específico.
   if (fd.get('consent') !== 'on') return json({ error: 'Para leer tu planilla necesitamos tu autorización.' }, 400);

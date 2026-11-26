@@ -3,6 +3,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { getUtm, track } from './consent';
 import { PROVINCES } from '@/lib/ecuador';
+import { TURNSTILE_ERROR, useTurnstile } from '@/components/turnstile';
+import { TURNSTILE_ACTIONS } from '@/lib/turnstile';
 
 type Props = {
   source: 'contacto' | 'cotizacion' | 'catalogo' | 'financiamiento' | 'capacitacion' | 'servicio';
@@ -19,16 +21,19 @@ type Props = {
 export function LeadForm({ source, segment, topic, title, askBill = true, askCompany = true, dark, submitLabel = 'Enviar solicitud' }: Props) {
   const [state, setState] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle');
   const [error, setError] = useState('');
+  const human = useTurnstile(TURNSTILE_ACTIONS.lead, { theme: dark ? 'dark' : 'light' });
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     setState('sending'); setError('');
+    const turnstileToken = await human.getToken().catch(() => null);
+    if (turnstileToken === null) { setState('error'); setError(TURNSTILE_ERROR); return; }
     const body = {
       source, segment: (f.get('segment') as string) || segment, topic: topic ?? (f.get('topic') as string) ?? undefined,
       name: f.get('name'), email: f.get('email'), phone: f.get('phone') || '', company: f.get('company') || '',
       province: f.get('province') || undefined, city: f.get('city') || undefined,
       monthlyBillUsd: f.get('bill') ? Number(f.get('bill')) : undefined, message: f.get('message') || undefined,
-      acceptPrivacy: f.get('privacy') === 'on', acceptMarketing: f.get('marketing') === 'on', utm: getUtm(), website: f.get('website') || '',
+      acceptPrivacy: f.get('privacy') === 'on', acceptMarketing: f.get('marketing') === 'on', utm: getUtm(), website: f.get('website') || '', turnstileToken,
     };
     const r = await fetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
     if (r?.ok) { setState('ok'); track('generate_lead', { source, segment: body.segment }); }
@@ -57,6 +62,7 @@ export function LeadForm({ source, segment, topic, title, askBill = true, askCom
         <label className="flex items-start gap-2"><input type="checkbox" name="privacy" required className="mt-1" /> <span>Acepto la <Link href="/privacidad" className="underline" target="_blank">política de privacidad</Link> y el tratamiento de mis datos para atender esta solicitud. *</span></label>
         <label className="flex items-start gap-2"><input type="checkbox" name="marketing" className="mt-1" /> <span>Autorizo recibir información comercial y novedades de Energy Solutions Ecuador (opcional).</span></label>
       </div>
+      {human.slot && <div className="sm:col-span-2">{human.slot}</div>}
       {state === 'error' && <p className="text-sm text-red-600 sm:col-span-2" role="alert">{error}</p>}
       <div className="sm:col-span-2"><button className="btn-primary w-full sm:w-auto" disabled={state === 'sending'}>{state === 'sending' ? 'Enviando…' : submitLabel}</button></div>
     </form>

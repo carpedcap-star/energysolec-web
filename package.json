@@ -11,6 +11,7 @@
     "e2e": "playwright test",
     "test:supabase": "SUPABASE_IT=1 vitest run src/lib/data/store.supabase.test.ts",
     "e2e:supabase": "playwright test -c playwright.supabase.config.ts",
+    "e2e:turnstile": "playwright test -c playwright.turnstile.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

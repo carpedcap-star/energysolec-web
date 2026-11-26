@@ -10,6 +10,9 @@ begin;
 
 do $$
 begin
+  if to_regclass('public.calc_params') is null then
+    raise exception 'La base todavía no tiene el esquema: ejecuta primero las migraciones (01_MIGRACIONES_PRODUCCION.sql o supabase db push).';
+  end if;
   if exists (select 1 from calc_params) or exists (select 1 from tariffs) or exists (select 1 from product_categories) then
     raise exception 'La base ya tiene datos iniciales: este archivo solo se ejecuta una vez sobre una base recién migrada.';
   end if;

@@ -1,5 +1,6 @@
 import { getStore } from '@/lib/data/store';
 import { clientMeta, guard, json, verifyHuman } from '@/lib/request';
+import { TURNSTILE_ACTIONS } from '@/lib/turnstile';
 import { UnlockBody, firstError } from '@/lib/schemas';
 import { studyToken } from '@/lib/token';
 import { renderStudyPdf } from '@/lib/pdf/report';
@@ -16,7 +17,7 @@ export async function POST(req: Request) {
   const parsed = UnlockBody.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return json({ error: firstError(parsed.error) }, 400);
   const b = parsed.data;
-  if (!(await verifyHuman(b.turnstileToken, b.website))) return json({ error: 'No pudimos verificar el envío. Recarga la página.' }, 400);
+  if (!(await verifyHuman(b.turnstileToken, b.website, TURNSTILE_ACTIONS.study))) return json({ error: 'No pudimos verificar el envío. Recarga la página.' }, 400);
 
   const store = getStore();
   const study = await store.getStudyByCode(b.code);

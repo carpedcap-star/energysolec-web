@@ -6,6 +6,8 @@ import { MONTHS_ES } from '@/lib/format';
 import type { StudyResult } from '@/lib/engine/study';
 import { StudyResults } from './results';
 import { getUtm, track } from '../consent';
+import { TURNSTILE_ERROR, useTurnstile } from '@/components/turnstile';
+import { TURNSTILE_ACTIONS } from '@/lib/turnstile';
 import { BillUpload, type BillResult } from './bill-upload';
 
 type TariffOpt = { code: string; name: string; segment: string; voltage_level: string; has_demand_charge: boolean; is_placeholder: boolean };
@@ -29,6 +31,7 @@ export function CalculatorWizard({ tariffs, initialSegment, initialObjective, bi
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const human = useTurnstile(TURNSTILE_ACTIONS.study);
   const [pending, setPending] = useState<{ code: string; teaser: { kwp: number; modules: number; annualGeneration: number } } | null>(null);
   const [done, setDone] = useState<{ r: StudyResult; token: string } | null>(null);
   // Planilla leída con IA: los datos propuestos llenan el formulario; el cliente debe revisarlos y confirmarlos.
@@ -88,9 +91,11 @@ export function CalculatorWizard({ tariffs, initialSegment, initialObjective, bi
     e.preventDefault();
     const d = new FormData(e.currentTarget);
     setBusy(true); setErr('');
+    const turnstileToken = await human.getToken().catch(() => null);
+    if (turnstileToken === null) { setBusy(false); return setErr(TURNSTILE_ERROR); }
     const r = await fetch('/api/study/unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       code: pending!.code, name: d.get('name'), email: d.get('email'), phone: d.get('phone') || '', company: d.get('company') || '',
-      acceptPrivacy: d.get('privacy') === 'on', acceptMarketing: d.get('marketing') === 'on', utm: getUtm(), website: d.get('website') || '',
+      acceptPrivacy: d.get('privacy') === 'on', acceptMarketing: d.get('marketing') === 'on', utm: getUtm(), website: d.get('website') || '', turnstileToken,
     }) }).catch(() => null);
     setBusy(false);
     if (!r?.ok) return setErr((await r?.json().catch(() => null))?.error ?? 'No se pudo enviar. Inténtalo de nuevo.');
@@ -125,6 +130,7 @@ export function CalculatorWizard({ tariffs, initialSegment, initialObjective, bi
             <label className="flex items-start gap-2"><input type="checkbox" name="privacy" required className="mt-1" /> <span>Acepto la <Link href="/privacidad" target="_blank" className="underline">política de privacidad</Link> y el tratamiento de mis datos para generar y enviarme este estudio. *</span></label>
             <label className="flex items-start gap-2"><input type="checkbox" name="marketing" className="mt-1" /> <span>Autorizo recibir información comercial de Energy Solutions Ecuador (opcional; no es necesario para recibir tu estudio).</span></label>
           </div>
+          {human.slot && <div className="sm:col-span-2">{human.slot}</div>}
           {err && <p className="text-sm text-red-600 sm:col-span-2" role="alert">{err}</p>}
           <button className="btn-primary sm:col-span-2" disabled={busy}>{busy ? 'Preparando…' : 'Ver mi estudio y recibirlo por correo'}</button>
         </form>

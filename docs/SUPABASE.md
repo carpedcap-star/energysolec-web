@@ -33,7 +33,9 @@ CI corre lo mismo en cada push y cada pull request (trabajo «Integración con S
 
 ## 2. Proyecto de producción
 
-Probado de punta a punta sobre la pila local con estos mismos archivos. Ejecuta los comandos desde la carpeta del repositorio.
+**Sin terminal (solo navegador, también desde el iPhone):** sigue [`supabase/produccion/LEEME.md`](../supabase/produccion/LEEME.md). Cuatro archivos para el SQL Editor (migraciones, datos iniciales, superadministrador y verificación de solo lectura), generados por `scripts/generar-sql-produccion.mjs` y probados sobre una instancia limpia por `scripts/probar-sql-produccion.sh` (también en CI). Si cambias una migración: `supabase db reset --no-seed`, `node scripts/generar-sql-produccion.mjs --huella`, y versiona el resultado.
+
+**Con terminal:** probado de punta a punta sobre la pila local con estos mismos archivos. Ejecuta los comandos desde la carpeta del repositorio.
 
 1. **Autenticar la CLI**: `npx supabase@2.122.1 login` (abre el navegador; el token queda en el llavero del sistema, no en el historial). No pegues tokens ni la contraseña de la base en comandos (`-p`, `--password`): deja que la CLI te los pida.
 2. **Vincular y migrar**:

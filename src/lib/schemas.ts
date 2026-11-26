@@ -12,7 +12,7 @@ export const LeadContact = z.object({
   acceptMarketing: z.boolean().default(false),   // autorización comercial separada y opcional (LOPDP)
   utm: Utm,
   website: z.string().max(0).optional(),        // honeypot
-  turnstileToken: z.string().optional(),
+  turnstileToken: z.string().max(2048).optional(),
 });
 
 export const UnlockBody = LeadContact.extend({ code: z.string().regex(/^ESE-\d{4}-\d{6}$/) });
@@ -41,7 +41,7 @@ export const OrderBody = z.object({
   acceptMarketing: z.boolean().default(false),
   utm: Utm,
   website: z.string().max(0).optional(),
-  turnstileToken: z.string().optional(),
+  turnstileToken: z.string().max(2048).optional(),
 });
 
 export const firstError = (e: z.ZodError) => e.issues[0]?.message ?? 'Datos no válidos';

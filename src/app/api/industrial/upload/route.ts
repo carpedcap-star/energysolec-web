@@ -1,5 +1,6 @@
 import { getStore } from '@/lib/data/store';
 import { guard, json, verifyHuman } from '@/lib/request';
+import { TURNSTILE_ACTIONS } from '@/lib/turnstile';
 import { checkIndustrialDoc, DOC_MAX_BYTES, safeFilename } from '@/lib/services/industrial';
 
 export const runtime = 'nodejs';
@@ -14,7 +15,7 @@ export async function POST(req: Request) {
   if (!(await guard('industrial_upload', 20, 3600))) return json({ error: 'Alcanzaste el máximo de archivos por hora.' }, 429);
   const fd = await req.formData().catch(() => null);
   if (!fd) return json({ error: 'Solicitud no válida.' }, 400);
-  if (!(await verifyHuman(String(fd.get('turnstileToken') ?? '') || undefined, String(fd.get('website') ?? '') || undefined)))
+  if (!(await verifyHuman(String(fd.get('turnstileToken') ?? '') || undefined, String(fd.get('website') ?? '') || undefined, TURNSTILE_ACTIONS.industrialDoc)))
     return json({ error: 'No pudimos verificar el envío. Recarga la página.' }, 400);
   if (fd.get('consent') !== 'on') return json({ error: 'Acepta la política de privacidad antes de adjuntar documentos.' }, 400);
   const file = fd.get('file');

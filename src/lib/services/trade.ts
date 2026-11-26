@@ -51,7 +51,7 @@ export const TradeApplication = z.object({
   acceptPrivacy: z.literal(true, { message: 'Debes aceptar la política de privacidad.' }),
   acceptMarketing: z.boolean().default(false),
   website: z.string().max(0).optional(),
-  turnstileToken: z.string().optional(),
+  turnstileToken: z.string().max(2048).optional(),
 });
 export type TradeApplication = z.infer<typeof TradeApplication>;
 

@@ -1,5 +1,6 @@
 import { getStore } from '@/lib/data/store';
 import { clientMeta, guard, json, verifyHuman } from '@/lib/request';
+import { TURNSTILE_ACTIONS } from '@/lib/turnstile';
 import { OrderBody, firstError } from '@/lib/schemas';
 import { priceCart } from '@/lib/services/cart';
 import { orderMessage, sendCloudText } from '@/lib/services/whatsapp';
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
   const p = OrderBody.safeParse(await req.json().catch(() => null));
   if (!p.success) return json({ error: firstError(p.error) }, 400);
   const b = p.data;
-  if (!(await verifyHuman(b.turnstileToken, b.website))) return json({ error: 'No pudimos verificar el envío.' }, 400);
+  if (!(await verifyHuman(b.turnstileToken, b.website, TURNSTILE_ACTIONS.order))) return json({ error: 'No pudimos verificar el envío.' }, 400);
 
   const store = getStore();
   // El nivel de precios sale SOLO de la sesión de una cuenta comercial aprobada, nunca de lo que envía el navegador.

@@ -3,20 +3,25 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { TRADE_TIERS } from '@/lib/services/trade';
 import { getUtm, track } from '../consent';
+import { TURNSTILE_ERROR, useTurnstile } from '@/components/turnstile';
+import { TURNSTILE_ACTIONS } from '@/lib/turnstile';
 
 export function TradeApplyForm() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [done, setDone] = useState(false);
+  const human = useTurnstile(TURNSTILE_ACTIONS.trade);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     setBusy(true); setErr('');
+    const turnstileToken = await human.getToken().catch(() => null);
+    if (turnstileToken === null) { setBusy(false); return setErr(TURNSTILE_ERROR); }
     const r = await fetch('/api/trade/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       company: f.get('company'), ruc: f.get('ruc'), tier: f.get('tier') ?? '', contact_name: f.get('contact_name'), email: f.get('email'),
       phone: f.get('phone'), city: f.get('city'), notes: f.get('notes') || '', acceptPrivacy: f.get('privacy') === 'on',
-      acceptMarketing: f.get('marketing') === 'on', website: f.get('website') || '', utm: getUtm(),
+      acceptMarketing: f.get('marketing') === 'on', website: f.get('website') || '', utm: getUtm(), turnstileToken,
     }) }).catch(() => null);
     setBusy(false);
     if (!r?.ok) return setErr((await r?.json().catch(() => null))?.error ?? 'No se pudo enviar la solicitud. Inténtalo de nuevo.');
@@ -57,6 +62,7 @@ export function TradeApplyForm() {
         <label className="flex items-start gap-2"><input type="checkbox" name="privacy" className="mt-1" /> <span>Acepto la <Link href="/privacidad" target="_blank" className="underline">política de privacidad</Link> y el tratamiento de mis datos para evaluar esta solicitud. *</span></label>
         <label className="flex items-start gap-2"><input type="checkbox" name="marketing" className="mt-1" /> <span>Autorizo recibir información comercial de Energy Solutions Ecuador (opcional).</span></label>
       </div>
+      {human.slot && <div className="sm:col-span-2">{human.slot}</div>}
       {err && <p className="text-sm text-red-600 sm:col-span-2" role="alert">{err}</p>}
       <button className="btn-primary sm:col-span-2" disabled={busy}>{busy ? 'Enviando…' : 'Enviar solicitud'}</button>
     </form>

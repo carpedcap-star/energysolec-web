@@ -24,7 +24,8 @@ Sin Supabase, los datos se guardan en `.data/dev-db.json` (solo desarrollo; en p
    - `APP_SECRET` (cadena aleatoria larga), `IP_HASH_SALT`, `NEXT_PUBLIC_SITE_URL=https://www.energysolec.com`.
    - `RESEND_API_KEY`, `EMAIL_FROM` (verifica el dominio en Resend: registros SPF/DKIM). El correo de avisos y los IDs de analítica se configuran en el panel (**Contacto e integraciones**).
    - `CRON_SECRET` (tareas diarias) y, si quieres la lectura de planillas, `ANTHROPIC_API_KEY`.
-   - Opcionales: `TURNSTILE_SECRET_KEY` + `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `WHATSAPP_CLOUD_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID`, `NEXT_PUBLIC_GTM_ID` / `NEXT_PUBLIC_GA4_ID` / `NEXT_PUBLIC_META_PIXEL_ID`.
+   - Antes del lanzamiento: `TURNSTILE_SECRET_KEY` + `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (anti-spam; se activa solo con las dos).
+   - Opcionales: `WHATSAPP_CLOUD_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID`, `NEXT_PUBLIC_GTM_ID` / `NEXT_PUBLIC_GA4_ID` / `NEXT_PUBLIC_META_PIXEL_ID`.
 3. **Dominio** — apunta `www.energysolec.com` a Vercel (CNAME) y redirige el dominio raíz. HTTPS es automático; HSTS ya está configurado en `next.config.mjs`.
 4. **Copias de seguridad** — activa *Point-in-Time Recovery* en Supabase (plan Pro) o programa `pg_dump` diario.
 5. Antes de publicar: completa la lista de `docs/DATOS_REQUERIDOS.md`, valida tarifas y parámetros en el panel y pasa la política de privacidad por revisión legal.

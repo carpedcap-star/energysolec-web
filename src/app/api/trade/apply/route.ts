@@ -1,5 +1,6 @@
 import { getStore } from '@/lib/data/store';
 import { clientMeta, guard, json, verifyHuman } from '@/lib/request';
+import { TURNSTILE_ACTIONS } from '@/lib/turnstile';
 import { firstError } from '@/lib/schemas';
 import { TradeApplication, tierLabel } from '@/lib/services/trade';
 import { notifySales, sendEmail, esc } from '@/lib/services/messaging';
@@ -13,7 +14,7 @@ export async function POST(req: Request) {
   const p = TradeApplication.safeParse(await req.json().catch(() => null));
   if (!p.success) return json({ error: firstError(p.error) }, 400);
   const b = p.data;
-  if (!(await verifyHuman(b.turnstileToken, b.website))) return json({ error: 'No pudimos verificar el envío. Recarga la página.' }, 400);
+  if (!(await verifyHuman(b.turnstileToken, b.website, TURNSTILE_ACTIONS.trade))) return json({ error: 'No pudimos verificar el envío. Recarga la página.' }, 400);
 
   const store = getStore();
   // Chequeo previo para no crear un lead duplicado; la base lo vuelve a imponer con índices únicos.

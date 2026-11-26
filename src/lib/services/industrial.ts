@@ -115,7 +115,7 @@ export const IndustrialRequest = z.object({
   acceptMarketing: z.boolean().default(false),
   utm: z.record(z.string(), z.string().max(200)).optional().default({}),
   website: z.string().max(0).optional(),
-  turnstileToken: z.string().optional(),
+  turnstileToken: z.string().max(2048).optional(),
 }).superRefine((v, ctx) => {
   // Para evaluar hace falta algún dato de consumo: kWh, factura o al menos una planilla adjunta.
   if (!v.monthlyKwh && !v.monthlyBillUsd && !v.documents.some((d) => d.kind === 'planilla'))

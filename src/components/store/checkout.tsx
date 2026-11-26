@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useCart } from '../cart';
 import { getUtm, track } from '../consent';
+import { TURNSTILE_ERROR, useTurnstile } from '@/components/turnstile';
+import { TURNSTILE_ACTIONS } from '@/lib/turnstile';
 import { fmtUsd2 } from '@/lib/format';
 import { IconWhatsapp } from '../icons';
 
@@ -23,17 +25,20 @@ export function CartCheckout({ trade }: { trade?: CheckoutTrade | null }) {
   const orderable = lines.filter((l) => !l.unavailable);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const human = useTurnstile(TURNSTILE_ACTIONS.order);
   const [done, setDone] = useState<{ number: string; whatsappUrl: string; total: number; sentViaApi: boolean } | null>(null);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     setBusy(true); setErr('');
+    const turnstileToken = await human.getToken().catch(() => null);
+    if (turnstileToken === null) { setBusy(false); return setErr(TURNSTILE_ERROR); }
     const r = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       lines: orderable.map((l) => ({ productId: l.productId, qty: l.qty })),
       name: f.get('name'), email: f.get('email'), phone: f.get('phone'), city: f.get('city'), address: f.get('address'),
       customerType: trade ? trade.tier : f.get('customerType'), notes: f.get('notes') || '', needsInstallation: f.get('install') === 'on',
-      acceptPrivacy: f.get('privacy') === 'on', acceptMarketing: f.get('marketing') === 'on', utm: getUtm(), website: f.get('website') || '',
+      acceptPrivacy: f.get('privacy') === 'on', acceptMarketing: f.get('marketing') === 'on', utm: getUtm(), website: f.get('website') || '', turnstileToken,
     }) }).catch(() => null);
     setBusy(false);
     if (!r?.ok) return setErr((await r?.json().catch(() => null))?.error ?? 'No se pudo registrar el pedido.');
@@ -98,6 +103,7 @@ export function CartCheckout({ trade }: { trade?: CheckoutTrade | null }) {
           <label className="flex items-start gap-2"><input type="checkbox" name="privacy" required className="mt-1" /> <span>Acepto la <Link href="/privacidad" target="_blank" className="underline">política de privacidad</Link>. *</span></label>
           <label className="flex items-start gap-2"><input type="checkbox" name="marketing" className="mt-1" /> <span>Autorizo recibir promociones y novedades (opcional).</span></label>
         </div>
+        {human.slot && <div className="sm:col-span-2">{human.slot}</div>}
         {err && <p className="text-sm text-red-600 sm:col-span-2" role="alert">{err}</p>}
         <button className="btn-primary sm:col-span-2" disabled={busy || orderable.length === 0}>{busy ? 'Registrando…' : 'Registrar pedido y continuar por WhatsApp'}</button>
       </form>

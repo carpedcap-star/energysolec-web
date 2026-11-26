@@ -1,5 +1,6 @@
 import { getStore } from '@/lib/data/store';
 import { clientMeta, guard, json, verifyHuman } from '@/lib/request';
+import { TURNSTILE_ACTIONS } from '@/lib/turnstile';
 import { GenericLeadBody, firstError } from '@/lib/schemas';
 import { notifySales, sendEmail, esc } from '@/lib/services/messaging';
 import { SITE } from '@/lib/site';
@@ -13,7 +14,7 @@ export async function POST(req: Request) {
   const p = GenericLeadBody.safeParse(await req.json().catch(() => null));
   if (!p.success) return json({ error: firstError(p.error) }, 400);
   const b = p.data;
-  if (!(await verifyHuman(b.turnstileToken, b.website))) return json({ error: 'No pudimos verificar el envío.' }, 400);
+  if (!(await verifyHuman(b.turnstileToken, b.website, TURNSTILE_ACTIONS.lead))) return json({ error: 'No pudimos verificar el envío.' }, 400);
   const store = getStore();
   const meta = await clientMeta();
   const lead = await store.createLead({
