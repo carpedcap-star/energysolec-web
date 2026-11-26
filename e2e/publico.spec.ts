@@ -14,10 +14,8 @@ test.describe('sitio público', () => {
 
   test('la calculadora entrega el estudio tras el registro', async ({ page }, info) => {
     await page.goto('/calculadora');
-    await page.getByRole('button', { name: 'Continuar' }).click();
-    await page.getByRole('button', { name: 'Continuar' }).click();
-    await page.locator('div').filter({ has: page.locator('p.label', { hasText: 'Factura mensual promedio (USD) *' }) }).last().locator('input').fill('85');
-    await page.getByRole('button', { name: 'Continuar' }).click();
+    await page.getByLabel('Factura mensual promedio (USD) *').fill('85');
+    for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Continuar' }).click();
     await page.getByRole('button', { name: 'Calcular mi estudio' }).click();
     // Sin acceso a PVGIS/NASA el motor usa el respaldo regional: el flujo debe completarse igual.
     await expect(page.getByText('Tu estudio energético personalizado está listo.')).toBeVisible({ timeout: 60_000 });
@@ -27,6 +25,41 @@ test.describe('sitio público', () => {
     await page.getByRole('button', { name: 'Ver mi estudio y recibirlo por correo' }).click();
     await page.waitForURL(/\/calculadora\/estudio\/ESE-\d{4}-\d{6}\?t=/);
     await expect(page.getByText(/kWp/).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Compara tus alternativas' })).toBeVisible();
+    await expectNoOverflow(page);
+  });
+
+  test('calculadora: superficies, respaldo y tres alternativas', async ({ page }, info) => {
+    await page.goto('/calculadora?segmento=comercial');
+    await page.getByRole('button', { name: 'Continuar' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: /./ })).toContainText('factura');
+    await page.getByRole('radio', { name: 'Consumo mensual (kWh)' }).click();
+    await page.getByLabel('Consumo mensual promedio (kWh) *').fill('4000');
+    await page.getByLabel('Tarifa de tu planilla').selectOption('COM-BV-D');
+    await page.getByLabel('Demanda facturable (kW)').fill('25');
+    await page.getByRole('button', { name: 'Continuar' }).click();
+    await page.getByLabel('Cantón o ciudad').fill('Guayaquil');
+    await expect(page.getByLabel('Empresa distribuidora')).toContainText('Según mi ubicación: CNEL EP Guayaquil');
+    await page.getByRole('button', { name: 'Continuar' }).click();
+    await page.getByLabel('Techo de metal').check();
+    await page.getByRole('button', { name: 'Continuar' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: /./ })).toContainText('No conozco el área');
+    await page.getByLabel('Área disponible (m²)').fill('150');
+    await page.getByLabel('Terreno').check();
+    await page.getByLabel('No conozco el área').nth(1).check();
+    await page.getByRole('button', { name: 'Continuar' }).click();
+    await page.getByLabel('Respaldo en apagones').check();
+    await page.getByRole('radio', { name: '4 h', exact: true }).click();
+    await page.getByRole('button', { name: 'Calcular mi estudio' }).click();
+    await page.getByLabel('Nombre *').fill('Cliente Alternativas', { timeout: 60_000 });
+    await page.getByLabel('Correo electrónico *').fill(`alt-${tag(info)}@example.com`);
+    await page.getByRole('checkbox', { name: /Acepto la política de privacidad/ }).check();
+    await page.getByRole('button', { name: 'Ver mi estudio y recibirlo por correo' }).click();
+    await page.waitForURL(/\/calculadora\/estudio\/ESE-\d{4}-\d{6}\?t=/);
+    for (const n of ['Energy On Grid', 'Energy Hybrid', 'Energy Off Grid']) await expect(page.getByRole('heading', { name: n })).toBeVisible();
+    await expect(page.getByText('Tu espacio disponible')).toBeVisible();
+    await expect(page.getByText(/Techo de metal: 150 m²/)).toBeVisible();
+    await expect(page.getByText(/Respaldo estimado/).first()).toBeVisible();
     await expectNoOverflow(page);
   });
 

@@ -6,6 +6,7 @@ import { fmtKwh, fmtKwp, fmtNum, fmtPct, fmtUsd, fmtYears, MONTHS_ES } from '@/l
 import { waLink } from '@/lib/site';
 import { IconLeaf, IconWhatsapp } from '../icons';
 import { track } from '../consent';
+import { AlternativesComparison } from './alternatives';
 
 type Sc = 'conservador' | 'base' | 'optimista';
 
@@ -39,6 +40,9 @@ export function StudyResults({ r, code, token }: { r: StudyResult; code: string;
         <div className="space-y-2">{r.warnings.map((w) => <p key={w} className="rounded-xl border-l-4 border-brand bg-amber-50 px-4 py-3 text-sm text-amber-950">{w}</p>)}</div>
       )}
 
+      <AlternativesComparison r={r} />
+
+      {r.alternatives?.length ? <h3 className="font-display text-2xl font-extrabold">Detalle del sistema conectado a la red</h3> : null}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi v={fmtKwp(z.kwp)} l={`${z.modules} módulos · inversor ${fmtNum(z.inverterKw)} kW`} />
         <Kpi v={fmtKwh(z.annualGeneration)} l="Generación estimada año 1" />

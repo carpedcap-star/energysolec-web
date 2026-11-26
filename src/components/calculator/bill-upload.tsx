@@ -10,8 +10,12 @@ import { TURNSTILE_ACTIONS } from '@/lib/turnstile';
 export type BillRead = {
   distributor: string | null; tariffCategory: string | null; billingPeriod: string | null; energyKwh: number | null;
   electricityUsd: number | null; totalUsd: number | null; demandKw: number | null; months: number;
+  distributorName?: string | null; voltage?: string | null; powerFactor?: number | null; creditsKwh?: number | null;
+  timeOfUse?: { scheme: string; kwh: Record<string, number> } | null;
+  charges?: { concept: string; kind: string; usd: number }[]; uncertain?: string[];
 };
-export type BillResult = { uploadId: string; proposal: BillCalcInput; read: BillRead };
+export type BillCheck = { tariffCode: string; computedUsd: number; billedUsd: number; diffShare: number; ok: boolean } | null;
+export type BillResult = { uploadId: string; proposal: BillCalcInput; read: BillRead; check?: BillCheck };
 
 const MAX_BYTES = 4 * 1024 * 1024;
 
@@ -73,14 +77,20 @@ export function BillUpload({ mode, result, onRead, onDiscard }: { mode: string; 
         </div>
         <dl className="mt-4 grid gap-x-6 gap-y-2 sm:grid-cols-2">
           {([
-            ['Distribuidora', r.distributor ?? '—'], ['Tarifa', r.tariffCategory ?? '—'], ['Consumo del mes', num(r.energyKwh, 'kWh')],
+            ['Distribuidora', r.distributorName ?? r.distributor ?? '—'], ['Tarifa', r.tariffCategory ?? '—'], ['Consumo del mes', num(r.energyKwh, 'kWh')],
             ['Servicio eléctrico', r.electricityUsd == null ? '—' : `$${r.electricityUsd.toLocaleString('es-EC')}`],
             ['Total a pagar', r.totalUsd == null ? '—' : `$${r.totalUsd.toLocaleString('es-EC')}`],
             ['Demanda', num(r.demandKw, 'kW')], ['Meses de historial', String(r.months)],
+            ...(r.voltage ? [['Nivel de voltaje', ({ BV: 'Bajo voltaje', MV: 'Medio voltaje', AV1: 'Alto voltaje', AV2: 'Alto voltaje' } as Record<string, string>)[r.voltage] ?? r.voltage]] : []),
+            ...(r.powerFactor != null ? [['Factor de potencia', r.powerFactor.toLocaleString('es-EC')]] : []),
+            ...(r.timeOfUse ? [['Consumo por franjas', Object.values(r.timeOfUse.kwh).map((k) => `${k.toLocaleString('es-EC')} kWh`).join(' · ')]] : []),
+            ...(r.creditsKwh ? [['Créditos de energía', num(r.creditsKwh, 'kWh')]] : []),
           ] as [string, string][]).map(([k, v]) => (
             <div key={k} className="flex min-w-0 justify-between gap-3 border-b border-line/70 pb-1"><dt className="text-muted">{k}</dt><dd className="min-w-0 text-right font-medium [overflow-wrap:anywhere]">{v}</dd></div>
           ))}
         </dl>
+        {result.check?.ok && <p className="mt-4 text-emerald-800" role="status">Comprobamos tu planilla con el pliego tarifario oficial: el servicio eléctrico calculado (${result.check.computedUsd.toFixed(2)}) coincide con lo facturado (${result.check.billedUsd.toFixed(2)}).</p>}
+        {!!r.uncertain?.length && <p className="mt-4 text-amber-900">Revisa con atención: algunos datos no se leyeron con claridad.</p>}
         {result.proposal.warnings.length > 0 && (
           <ul className="mt-4 list-disc space-y-1 pl-5 text-amber-900">{result.proposal.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
         )}

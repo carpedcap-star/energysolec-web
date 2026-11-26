@@ -6,8 +6,6 @@ const BILL = '11111111-1111-4111-8111-111111111111';
 test.describe('planillas eléctricas (sin clave de IA)', () => {
   test('sin ANTHROPIC_API_KEY la opción no aparece y la API responde 503', async ({ page, request }) => {
     await page.goto('/calculadora');
-    await page.getByRole('button', { name: 'Continuar' }).click();
-    await page.getByRole('button', { name: 'Continuar' }).click();
     await expect(page.getByText('¿Qué dato tienes?')).toBeVisible();
     await expect(page.getByText('¿Tienes tu planilla eléctrica a mano?')).toHaveCount(0);
     const r = await request.post('/api/bill', { multipart: { consent: 'on', file: { name: 'p.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n') } } });
