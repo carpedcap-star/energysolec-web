@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PARAMS } from '../engine/params';
-import { parseParamsForm, toFormValues, type EditableParams } from './params-form';
+import { parseParamsForm, TIER_TABLES, tierRows, toFormValues, type EditableParams } from './params-form';
 
 const { version: _v, ...DEF } = DEFAULT_PARAMS;
 function fdFrom(p: EditableParams, over: Record<string, string> = {}, tiers?: [string, string][], validated = false) {
@@ -13,6 +13,8 @@ function fdFrom(p: EditableParams, over: Record<string, string> = {}, tiers?: [s
   for (const [up, price] of tiers ?? p.pricing.pvTiers.map((t, i, a) => [i === a.length - 1 ? '' : String(t.upToKwp), String(t.usdPerKwp)] as [string, string])) {
     fd.append('tier_up', up); fd.append('tier_price', price);
   }
+  for (const t of TIER_TABLES.slice(1)) for (const r of tierRows(p, t)) { fd.append(t.names[0], r.up); fd.append(t.names[1], r.price); }
+  if (p.financial.officialTariffsReviewed) fd.append('tariffs_reviewed', 'on');
   if (validated) fd.append('validated', 'on');
   return fd;
 }
@@ -49,8 +51,25 @@ describe('parámetros: coherencia', () => {
     expect(err(fdFrom(DEF, { 'financial.inverterReplacementYear': '30' }))).toMatch(/entre el año 1 y la vida útil/);
   });
   it('números, enteros y rangos del motor', () => {
-    expect(err(fdFrom(DEF, { 'pricing.batteryUsdPerKwh': 'abc' }))).toMatch(/«Baterías»: ingresa un número/);
+    expect(err(fdFrom(DEF, { 'pricing.engineeringShare': 'abc' }))).toMatch(/«Ingeniería y permisos»: ingresa un número/);
     expect(err(fdFrom(DEF, { 'financial.lifetimeYears': '25.5' }))).toMatch(/entero/);
     expect(err(fdFrom(DEF, { 'technical.dcAcRatio': '3' }))).toMatch(/«Relación CC\/CA»: valor fuera del rango/);
+  });
+  it('precios por sistema, implantación y baterías', () => {
+    const fd = fdFrom(DEF, { 'pricing.mountingUsdPerKwp.hincado': '120' });
+    fd.delete('bt_up'); fd.delete('bt_price');
+    fd.append('bt_up', '10'); fd.append('bt_price', '520'); fd.append('bt_up', ''); fd.append('bt_price', '450');
+    const d = ok(fd);
+    expect(d.pricing.mountingUsdPerKwp.hincado).toBe(120);
+    expect(d.pricing.batteryTiers).toEqual([{ upToKwh: 10, usdPerKwh: 520 }, { upToKwh: 1e9, usdPerKwh: 450 }]);
+    expect(d.pricing.batteryUsdPerKwh).toBe(520);
+    const bad = fdFrom(DEF); bad.delete('og_up'); bad.delete('og_price'); bad.append('og_up', '50'); bad.append('og_price', '1500');
+    expect(err(bad)).toMatch(/Off Grid.*sin límite/);
+  });
+  it('respaldo ordenado y pliego revisado solo si se marca', () => {
+    expect(err(fdFrom(DEF, { 'technical.backupLoadShare.esencial': '60' }))).toMatch(/esencial/);
+    expect(ok(fdFrom(DEF)).financial.officialTariffsReviewed).toBe(false);
+    const fd = fdFrom(DEF); fd.append('tariffs_reviewed', 'on');
+    expect(ok(fd).financial.officialTariffsReviewed).toBe(true);
   });
 });

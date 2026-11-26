@@ -110,7 +110,11 @@ export async function saveParamsAction(_: unknown, fd: FormData): Promise<{ erro
   const data = parsed.data;
   // Quien no valida deja siempre la versión pendiente de Gerencia (aunque la anterior estuviera validada).
   const forcedPending = !VALIDATES_PARAMS.includes(staff.role);
-  if (forcedPending) data.isPlaceholder = true;
+  if (forcedPending) {
+    data.isPlaceholder = true;
+    // La revisión del pliego oficial también es de Gerencia: quien no valida conserva el valor vigente.
+    data.financial.officialTariffsReviewed = (await getStoreAs(staff.id).getActiveParams()).financial.officialTariffsReviewed;
+  }
   let version: number;
   try { version = (await getStoreAs(staff.id).saveParams(data, staff.id)).version; } catch (e) { return { error: (e as Error).message }; }
   revalidatePath('/admin/parametros'); revalidatePath('/calculadora');
