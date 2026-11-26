@@ -1,4 +1,4 @@
-import { expect, expectNoOverflow, tag, test } from './helpers';
+import { db, expect, expectNoOverflow, isMobile, staffLogin, tag, test } from './helpers';
 
 const PAGES = ['/', '/tienda', '/calculadora', '/proyectos', '/servicios', '/marcas', '/blog', '/nosotros', '/contacto', '/financiamiento', '/profesionales', '/cotizacion-industrial', '/privacidad'];
 
@@ -60,6 +60,16 @@ test.describe('sitio público', () => {
     await expect(page.getByText('Tu espacio disponible')).toBeVisible();
     await expect(page.getByText(/Techo de metal: 150 m²/)).toBeVisible();
     await expect(page.getByText(/Respaldo estimado/).first()).toBeVisible();
+    await expectNoOverflow(page);
+    // Informe PDF con la página de alternativas y ficha del lead en el CRM.
+    const pdf = await page.request.get(page.url().replace('/calculadora/estudio/', '/api/study/').replace('?t=', '/pdf?t='));
+    expect(pdf.status()).toBe(200);
+    expect(pdf.headers()['content-type']).toBe('application/pdf');
+    if (isMobile(info)) return;
+    await staffLogin(page, 'superadmin');
+    await page.goto(`/admin/leads/${db().leads.find((l: { email: string }) => l.email === `alt-${tag(info)}@example.com`).id}`);
+    await expect(page.getByRole('heading', { name: 'Estudios de la calculadora' })).toBeVisible();
+    await expect(page.getByRole('rowheader', { name: /Energy Off Grid/ })).toBeVisible();
     await expectNoOverflow(page);
   });
 

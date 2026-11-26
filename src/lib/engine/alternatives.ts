@@ -199,9 +199,9 @@ export function computeAlternatives(i: AlternativesInput): { surfaces: SurfaceRe
   surfaces.coverageReachable = maxKwp != null && maxKwp < ideal ? r2(coverageOf(yOn)) : null;
   const mountOn = mountingSplit(i, kwpOn, structuredClone(perSurface));
   const onWarnings = ['Un sistema On Grid convencional se apaga cuando se va la luz: no da respaldo durante apagones.'];
-  if (!areaKnown) onWarnings.push(`No conocemos el área disponible: se necesitan unos ${surfaces.requiredAreaM2} m² para la potencia ideal; lo confirmaremos en la visita.`);
+  if (!areaKnown) onWarnings.push(`${perSurface.some((x) => x.areaM2 != null) ? 'No conocemos toda el área disponible' : 'No conocemos el área disponible'}: se necesitan unos ${surfaces.requiredAreaM2} m² para la potencia ideal; lo confirmaremos en la visita.`);
   if (bestNpv <= 0 && kwpOn > 0) onWarnings.push('Con los precios y la tarifa actuales, ninguna potencia recupera la inversión dentro de la vida útil: el beneficio es principalmente ambiental o de respaldo.');
-  if (surfaces.additionalKwp > 0) onWarnings.push(`El espacio indicado limita la potencia: faltan unos ${surfaces.additionalKwp} kWp (≈ ${surfaces.additionalAreaM2} m²) para la potencia ideal.`);
+  if (surfaces.additionalKwp > 0) onWarnings.push(`El espacio indicado limita la potencia: faltan unos ${surfaces.additionalKwp} kWp (unos ${surfaces.additionalAreaM2} m²) para la potencia ideal.`);
   const onGrid: Alternative = {
     key: 'onGrid', name: 'Energy On Grid', applicable: kwpOn > 0, reason: kwpOn > 0 ? undefined : 'El espacio indicado no alcanza ni para un módulo.',
     kwp: r2(kwpOn), modules: roundModules(kwpOn), inverterKw: roundInverter(kwpOn / t.dcAcRatio), battery: null,
@@ -229,7 +229,7 @@ export function computeAlternatives(i: AlternativesInput): { surfaces: SurfaceRe
   const mountHy = mountingSplit(i, kwpOn, structuredClone(perSurface));
   const hyCommon = common(yHy);
   const hyWarnings = [
-    `Respaldo estimado de ${hours} h para las cargas ${scope === 'total' ? 'de todo el inmueble' : scope === 'parcial' ? 'principales' : 'esenciales'} (≈ ${r1(backupKw)} kW). Es preliminar: se confirma con el inventario de cargas y sus arranques.`,
+    `Respaldo estimado de ${hours} h para las cargas ${scope === 'total' ? 'de todo el inmueble' : scope === 'parcial' ? 'principales' : 'esenciales'} (unos ${r1(backupKw)} kW). Es preliminar: se confirma con el inventario de cargas y sus arranques.`,
   ];
   if (s.demand) hyWarnings.push('No se considera reducción del cargo por demanda con baterías: se demuestra solo con mediciones horarias de demanda.');
   const hybrid: Alternative = {
@@ -275,7 +275,7 @@ export function computeAlternatives(i: AlternativesInput): { surfaces: SurfaceRe
   kwpOff = roundModules(kwpOff) * moduleKw;
   if (maxKwp != null && kwpOff > maxKwp) {
     const relMax = simulateOff(roundModules(maxKwp) * moduleKw, nomOff);
-    offWarnings.push(`El espacio indicado no permite la potencia necesaria (${r1(kwpOff)} kWp): con ${r1(maxKwp)} kWp la energía suministrada sería ≈ ${(relMax * 100).toFixed(1)} %. Alternativas: más superficie, reducir cargas o un generador de respaldo.`);
+    offWarnings.push(`El espacio indicado no permite la potencia necesaria (${r1(kwpOff)} kWp): con ${r1(maxKwp)} kWp la energía suministrada sería cerca del ${(relMax * 100).toFixed(1)} %. Alternativas: más superficie, reducir cargas o un generador de respaldo.`);
     if (offApplicable) { offApplicable = relMax >= 0.95; if (!offApplicable) offReason = 'La superficie disponible no alcanza para un sistema aislado confiable.'; }
     kwpOff = Math.min(kwpOff, roundModules(maxKwp) * moduleKw);
     rel = relMax;

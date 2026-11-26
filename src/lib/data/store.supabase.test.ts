@@ -60,6 +60,7 @@ describe.skipIf(!run)('almacén Supabase (integración)', () => {
     expect(await store.hasMarketingConsent(`lead-${U}@it.test`)).toBe(false);
     await store.unlockStudy(studyCode, leadId);
     expect((await store.getStudyByCode(studyCode))?.lead_id).toBe(leadId);
+    expect((await store.listStudiesForLead(leadId)).map((s) => s.code)).toContain(studyCode);
     await store.updateLead(leadId, { stage: 'contactado' }, gerencia);
     await store.addActivity(leadId, 'nota', 'Prueba de integración', gerencia);
     expect((await store.listActivities(leadId)).some((a) => a.body === 'Prueba de integración')).toBe(true);

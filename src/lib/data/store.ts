@@ -38,6 +38,8 @@ export interface Store {
   deactivateTariff(id: string): Promise<void>;
   createStudy(s: Omit<Study, 'id' | 'code' | 'created_at' | 'unlocked' | 'visit_requested' | 'lead_id'>): Promise<Study>;
   getStudyByCode(code: string): Promise<Study | null>;
+  /** Estudios desbloqueados por un lead, del más reciente al más antiguo (ficha del CRM). */
+  listStudiesForLead(leadId: string): Promise<Study[]>;
   /** Marca el estudio como desbloqueado y vincula el lead (también a la planilla cargada para ese estudio, si la hay). */
   unlockStudy(code: string, leadId: string): Promise<void>;
   // ---- Planillas subidas por clientes (bucket privado 'bills')
@@ -421,6 +423,7 @@ const devStore: Store = {
     db.studies.push(st); return st;
   }),
   getStudyByCode: (code) => tx((db) => db.studies.find((s) => s.code === code) ?? null),
+  listStudiesForLead: (leadId) => tx((db) => db.studies.filter((s) => s.lead_id === leadId).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 10)),
   unlockStudy: (code, leadId) => tx((db) => {
     const s = db.studies.find((x) => x.code === code);
     if (!s) return;
@@ -949,6 +952,7 @@ return {
     throw new Error('No se pudo generar el código de estudio');
   },
   async getStudyByCode(code) { return must(await sb().from('solar_studies').select('*').eq('code', code).maybeSingle()) as Study | null; },
+  async listStudiesForLead(leadId) { return must(await sb().from('solar_studies').select('*').eq('lead_id', leadId).order('created_at', { ascending: false }).limit(10)) as Study[]; },
   async unlockStudy(code, leadId) {
     const st = must(await sb().from('solar_studies').update({ unlocked: true, lead_id: leadId }).eq('code', code).select('id').maybeSingle()) as { id: string } | null;
     if (st) must(await sb().from('bill_uploads').update({ lead_id: leadId }).eq('study_id', st.id));

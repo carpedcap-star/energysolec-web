@@ -82,6 +82,42 @@ function CashflowChart({ cum }: { cum: number[] }) {
   );
 }
 
+/** La Helvetica estándar del PDF (WinAnsi) no trae ≈, →, ≤, ≥ ni subíndices: se reemplazan en los textos del motor. */
+const pdfSafe = (t: string) => t.replace(/≈/g, 'aprox.').replace(/→/g, 'a').replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/₂/g, '2');
+
+const SURFACE_LABEL: Record<string, string> = { techo_metalico: 'Techo de metal', techo_inclinado: 'Techo inclinado', losa: 'Losa', terreno: 'Terreno' };
+
+type Alt = NonNullable<Study['results']['alternatives']>[number];
+function AlternativesTable({ r }: { r: Study['results'] }) {
+  const alts = r.alternatives!;
+  const rows: [string, (a: Alt) => string][] = [
+    ['Potencia', (a) => `${fmtKwp(a.kwp)} (${a.modules} mód.)`],
+    ['Inversor', (a) => `${fmtNum(a.inverterKw)} kW`],
+    ['Baterías', (a) => (a.battery ? `${fmtNum(a.battery.nominalKwh)} kWh (${fmtNum(a.battery.usableKwh)} útiles)` : 'No')],
+    ['Respaldo estimado', (a) => (a.battery?.backupHours != null ? `${fmtNum(a.battery.backupHours, 0)} h` : '—')],
+    ['Área requerida', (a) => `${fmtNum(a.areaM2, 0)} m²`],
+    ['Generación año 1', (a) => fmtKwh(a.annualGenerationKwh)],
+    ['Cobertura del consumo', (a) => fmtPct(a.coverage)],
+    ['Inversión (IVA incl.)', (a) => fmtUsd(a.scenarios.base.capex.total)],
+    ['Ahorro año 1', (a) => (a.key === 'offGrid' ? `${fmtUsd(a.billBeforeYear)} evitados` : fmtUsd(a.savingYear1))],
+    ['Planilla anual', (a) => (a.key === 'offGrid' ? 'Sin conexión' : `${fmtUsd(a.billBeforeYear)} a ${fmtUsd(a.billAfterYear)}`)],
+    ['Retorno simple', (a) => fmtYears(a.scenarios.base.simplePayback)],
+    ['VAN', (a) => fmtUsd(a.scenarios.base.npv)],
+    ['TIR', (a) => (a.scenarios.base.irr == null ? 'n/d' : fmtPct(a.scenarios.base.irr))],
+    ['Suministro / costo energía', (a) => (a.key === 'offGrid' ? `${a.reliability != null ? fmtPct(a.reliability) : '—'} · $${(a.costOfEnergyUsdPerKwh ?? 0).toFixed(3)}/kWh` : '—')],
+  ];
+  return (
+    <View style={s.table}>
+      <View style={[s.tr, s.th]}><Text style={{ flex: 1.3 }}>Indicador</Text>{alts.map((a) => <Text key={a.key} style={{ flex: 1.2, textAlign: 'right' }}>{r.recommended === a.key ? '* ' : ''}{a.name.replace('Energy ', '')}</Text>)}</View>
+      <View style={s.tr}><Text style={{ flex: 1.3, color: '#6b6767' }}>Aplica a tu caso</Text>{alts.map((a) => <Text key={a.key} style={{ flex: 1.2, textAlign: 'right' }}>{a.applicable ? 'Sí' : 'No'}</Text>)}</View>
+      {rows.map(([k, f]) => (
+        <View key={k} style={s.tr}><Text style={{ flex: 1.3, color: '#6b6767' }}>{k}</Text>{alts.map((a) => <Text key={a.key} style={{ flex: 1.2, textAlign: 'right' }}>{a.applicable ? f(a) : '—'}</Text>)}</View>
+      ))}
+      <View style={s.tr}><Text style={{ flex: 1.3, color: '#6b6767' }}>Destaca por</Text>{alts.map((a) => <Text key={a.key} style={{ flex: 1.2, textAlign: 'right', fontSize: 8 }}>{a.labels.join(', ') || '—'}</Text>)}</View>
+    </View>
+  );
+}
+
 export type ReportContact = { name: string; email: string; company: string | null; phone: string | null };
 
 function StudyDoc({ study, contact, company }: { study: Study; contact: ReportContact; company: { whatsappDisplay: string; email: string } }) {
@@ -150,9 +186,35 @@ function StudyDoc({ study, contact, company }: { study: Study; contact: ReportCo
         <Footer code={study.code} wa={company.whatsappDisplay} />
       </Page>
 
+      {/* Alternativas */}
+      {r.alternatives?.length ? (
+        <Page size="A4" style={s.page}>
+          <Text style={s.h2}>Alternativas evaluadas</Text>
+          <Text style={[s.muted, { marginBottom: 8 }]}>Dimensionamiento preliminar con el escenario base. La alternativa recomendada se marca con *. La propuesta final se confirma con la visita técnica.</Text>
+          <AlternativesTable r={r} />
+          {r.surfaces && (
+            <View style={{ marginTop: 12 }}>
+              <Text style={s.h3}>Espacio disponible</Text>
+              <Text>Potencia ideal para el consumo: {fmtKwp(r.surfaces.idealKwp)} · recomendada: {fmtKwp(r.surfaces.recommendedKwp)} · área necesaria: {fmtNum(r.surfaces.requiredAreaM2, 0)} m².</Text>
+              <Text>Máximo instalable en el espacio indicado: {r.surfaces.maxKwp == null ? 'sin dato de área (se confirma en la visita)' : fmtKwp(r.surfaces.maxKwp)}{r.surfaces.coverageReachable != null ? ` · cobertura alcanzable ${fmtPct(r.surfaces.coverageReachable)}` : ''}.</Text>
+              {r.surfaces.perSurface.map((p) => <Text key={p.type}>• {SURFACE_LABEL[p.type] ?? p.type}: {p.areaM2 == null ? 'área por confirmar' : `${fmtNum(p.areaM2, 0)} m² (hasta ${fmtKwp(p.maxKwp ?? 0)})`}</Text>)}
+              {r.surfaces.additionalKwp > 0 && <Text style={s.warn}>Para cubrir el consumo ideal faltarían {fmtKwp(r.surfaces.additionalKwp)} (unos {fmtNum(r.surfaces.additionalAreaM2, 0)} m² adicionales).</Text>}
+            </View>
+          )}
+          {r.alternatives.filter((a) => a.warnings.length || (!a.applicable && a.reason)).map((a) => (
+            <View key={a.key} style={{ marginTop: 8 }} wrap={false}>
+              <Text style={s.h3}>{a.name}</Text>
+              {!a.applicable && a.reason && <Text>• {pdfSafe(a.reason)}</Text>}
+              {a.warnings.map((w, i) => <Text key={i} style={{ fontSize: 8.5 }}>• {pdfSafe(w)}</Text>)}
+            </View>
+          ))}
+          <Footer code={study.code} wa={company.whatsappDisplay} />
+        </Page>
+      ) : null}
+
       {/* Finanzas */}
       <Page size="A4" style={s.page}>
-        <Text style={s.h2}>Escenarios financieros</Text>
+        <Text style={s.h2}>Escenarios financieros{r.alternatives?.length ? ' — sistema conectado a la red' : ''}</Text>
         <View style={s.table}>
           <View style={[s.tr, s.th]}><Text style={{ flex: 2 }}>Indicador</Text>{scName.map((n) => <Text key={n} style={{ flex: 1, textAlign: 'right' }}>{n}</Text>)}</View>
           {([
@@ -185,8 +247,8 @@ function StudyDoc({ study, contact, company }: { study: Study; contact: ReportCo
 
         <Text style={[s.h2, { marginTop: 14 }]}>Beneficios ambientales</Text>
         <View style={s.row}>
-          <Kpi v={`${fmtNum(r.environment.co2TonsYear)} t`} l="CO₂ evitado por año" />
-          <Kpi v={`${fmtNum(r.environment.co2Tons25, 0)} t`} l="CO₂ evitado en 25 años" />
+          <Kpi v={`${fmtNum(r.environment.co2TonsYear)} t`} l="CO2 evitado por año" />
+          <Kpi v={`${fmtNum(r.environment.co2Tons25, 0)} t`} l="CO2 evitado en 25 años" />
           <Kpi v={fmtNum(r.environment.treesEquivalent, 0)} l="Árboles equivalentes / año" />
         </View>
         <Footer code={study.code} wa={company.whatsappDisplay} />
@@ -195,8 +257,8 @@ function StudyDoc({ study, contact, company }: { study: Study; contact: ReportCo
       {/* Supuestos */}
       <Page size="A4" style={s.page}>
         <Text style={s.h2}>Supuestos técnicos y fuentes de información</Text>
-        {r.warnings.map((w, i) => <Text key={i} style={s.warn}>{w}</Text>)}
-        {z.assumptions.map((a, i) => <Text key={i} style={{ marginBottom: 3 }}>• {a}</Text>)}
+        {r.warnings.map((w, i) => <Text key={i} style={s.warn}>{pdfSafe(w)}</Text>)}
+        {z.assumptions.map((a, i) => <Text key={i} style={{ marginBottom: 3 }}>• {pdfSafe(a)}</Text>)}
         <Text style={[s.h3, { marginTop: 10 }]}>Pérdidas del sistema consideradas</Text>
         {z.lossItems.map((l) => <Text key={l.label}>• {l.label}: {fmtNum(l.loss * 100)} %</Text>)}
         <Text style={[s.h3, { marginTop: 10 }]}>Fuentes</Text>
@@ -204,7 +266,7 @@ function StudyDoc({ study, contact, company }: { study: Study; contact: ReportCo
         {r.resource.notes?.map((n, i) => <Text key={i}>• {n}</Text>)}
         <Text>• Tarifa aplicada: {r.tariff.name} ({r.tariff.code}). {r.tariff.sourceNote}</Text>
         <Text>• Parámetros técnico-económicos: versión {r.paramsVersion}{r.paramsPlaceholder ? ' (provisional)' : ''}.</Text>
-        <Text>• Los excedentes exportados a la red no se valoran económicamente salvo que la regulación aplicable y el régimen del cliente lo permitan y esté configurado.</Text>
+        <Text>• Los excedentes exportados a la red no se valoran económicamente salvo que el cliente se acoja al balance neto de la Regulación ARCONEL-005/24 y así esté configurado; en ese caso se acreditan en kWh, nunca en dinero.</Text>
 
         <View style={{ marginTop: 18, padding: 12, backgroundColor: '#f6f5f2' }}>
           <Text style={s.h3}>Importante</Text>
