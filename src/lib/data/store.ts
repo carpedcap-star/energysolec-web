@@ -404,7 +404,8 @@ function tx<T>(fn: (db: DevDb) => T | Promise<T>): Promise<T> {
 
 const devStore: Store = {
   kind: 'dev',
-  getActiveParams: () => tx((db) => db.params[db.params.length - 1]),
+  // Igual que Supabase: se valida y se completan los campos agregados después (versiones guardadas antes).
+  getActiveParams: () => tx((db) => CalcParams.parse(db.params[db.params.length - 1])),
   saveParams: (p) => tx((db) => { const v = { ...p, version: db.params.length + 1 } as CalcParams; db.params.push(v); return v; }),
   listTariffs: () => tx((db) => db.tariffs.filter((t) => (t as Tariff & { active?: boolean }).active !== false)),
   saveTariff: (t) => tx((db) => {

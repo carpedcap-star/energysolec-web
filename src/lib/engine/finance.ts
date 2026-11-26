@@ -1,17 +1,28 @@
-import type { CalcParams } from './params';
+import { MOUNTING_PRICE_KEYS, type CalcParams } from './params';
 import type { SizingResult } from './solar';
 import { monthlyBill, type Tariff } from './tariff';
 
 export type ScenarioName = 'conservador' | 'base' | 'optimista';
 
-export function capex(p: CalcParams, kwp: number, batteryKwh: number, capexFactor = 1) {
-  const tier = p.pricing.pvTiers.find((t) => kwp <= t.upToKwp) ?? p.pricing.pvTiers[p.pricing.pvTiers.length - 1];
+export type SystemType = 'onGrid' | 'hybrid' | 'offGrid';
+export type MountingPriceKey = (typeof MOUNTING_PRICE_KEYS)[number];
+
+/**
+ * Inversión estimada: precio por kWp según el tipo de sistema y el tramo de potencia, más el sobreprecio de la
+ * estructura de cada superficie (kWp por tipo), más baterías por tramo de capacidad, ingeniería, mínimo e IVA.
+ * Sin `opts` se comporta como antes (On Grid, sin sobreprecios, baterías al precio por kWh de base).
+ */
+export function capex(p: CalcParams, kwp: number, batteryKwh: number, capexFactor = 1, opts: { system?: SystemType; mountingKwp?: Partial<Record<MountingPriceKey, number>> } = {}) {
+  const tiers = opts.system === 'hybrid' ? p.pricing.hybridPvTiers : opts.system === 'offGrid' ? p.pricing.offGridPvTiers : p.pricing.pvTiers;
+  const tier = tiers.find((t) => kwp <= t.upToKwp) ?? tiers[tiers.length - 1];
   const pv = kwp * tier.usdPerKwp;
-  const storage = batteryKwh * p.pricing.batteryUsdPerKwh;
-  const engineering = (pv + storage) * p.pricing.engineeringShare;
-  const net = Math.max(p.pricing.minimumProjectUsd, (pv + storage + engineering) * capexFactor);
+  const mounting = Object.entries(opts.mountingKwp ?? {}).reduce((a, [k, v]) => a + (v ?? 0) * (p.pricing.mountingUsdPerKwp[k as MountingPriceKey] ?? 0), 0);
+  const bt = p.pricing.batteryTiers.find((t) => batteryKwh <= t.upToKwh) ?? p.pricing.batteryTiers[p.pricing.batteryTiers.length - 1];
+  const storage = batteryKwh * (opts.system ? bt.usdPerKwh : p.pricing.batteryUsdPerKwh);
+  const engineering = (pv + mounting + storage) * p.pricing.engineeringShare;
+  const net = Math.max(p.pricing.minimumProjectUsd, (pv + mounting + storage + engineering) * capexFactor);
   const vat = net * p.pricing.vatOnCapex;
-  return { pv, storage, engineering, net, vat, total: net + vat, usdPerKwp: tier.usdPerKwp };
+  return { pv, mounting, storage, engineering, net, vat, total: net + vat, usdPerKwp: tier.usdPerKwp };
 }
 
 /** Ahorro del primer año comparando facturas con y sin sistema, mes a mes. */
@@ -136,5 +147,57 @@ export function financeScenario(
     savings25: savingsSum,
     roi: (cumulative[cumulative.length - 1]) / cx.total,
     generationByYear: gens, loan,
+  };
+}
+
+/**
+ * Evaluación financiera a partir del ahorro del primer año ya calculado (motor tarifario v2): mismo flujo de caja,
+ * VAN, TIR, LCOE y reposiciones que financeScenario. La batería se repone en el año configurado (supuesto existente:
+ * su costo baja ~40 %).
+ */
+export function evaluateInvestment(o: {
+  p: CalcParams; scenario: ScenarioName; system: SystemType; kwp: number; batteryKwh: number;
+  mountingKwp?: Partial<Record<MountingPriceKey, number>>;
+  year1: { saving: number; before: number; after: number; generationKwh: number };
+}): FinanceResult {
+  const { p, scenario } = o;
+  const f = p.financial;
+  const sc = f.scenarios[scenario];
+  const cx = capex(p, o.kwp, o.batteryKwh, sc.capexFactor, { system: o.system, mountingKwp: o.mountingKwp });
+  const N = f.lifetimeYears;
+  const deg = p.technical.annualDegradation + sc.extraDegradation;
+  const saving1 = o.year1.saving * sc.yieldFactor;
+  const flows = [-cx.total], disc = [-cx.total], gens: number[] = [];
+  let pvCosts = cx.total, pvEnergy = 0, savingsSum = 0;
+  for (let y = 1; y <= N; y++) {
+    const perf = (1 - deg) ** (y - 1);
+    const saving = saving1 * perf * (1 + sc.tariffEscalation) ** (y - 1);
+    const om = f.omUsdPerKwpYear * o.kwp * (1 + f.omEscalation) ** (y - 1);
+    let repl = 0;
+    if (y === f.inverterReplacementYear) repl += cx.net * f.inverterReplacementShareOfCapex;
+    if (o.batteryKwh > 0 && y === f.batteryReplacementYear) repl += cx.storage * 0.6;
+    const cf = saving - om - repl;
+    flows.push(cf);
+    const df = (1 + f.discountRate) ** y;
+    disc.push(cf / df);
+    const g = o.year1.generationKwh * sc.yieldFactor * perf;
+    gens.push(Math.round(g));
+    pvCosts += (om + repl) / df; pvEnergy += g / df; savingsSum += saving;
+  }
+  const cumulative: number[] = [];
+  flows.reduce((a, c) => { const v = a + c; cumulative.push(v); return v; }, 0);
+  let loan: FinanceResult['loan'] = null;
+  if (f.financing.enabled) {
+    const principal = cx.total * (1 - f.financing.downPayment);
+    const r = f.financing.annualRate / 12, n = f.financing.years * 12;
+    loan = { principal, monthlyPayment: (principal * r) / (1 - (1 + r) ** -n), years: f.financing.years, rate: f.financing.annualRate };
+  }
+  return {
+    scenario, capex: cx, savingYear1: saving1, savingMonthYear1: saving1 / 12,
+    billBeforeYear: o.year1.before, billAfterYear: o.year1.before - saving1,
+    billReduction: o.year1.before > 0 ? saving1 / o.year1.before : 0,
+    cashflows: flows, cumulative, simplePayback: payback(flows), discountedPayback: payback(disc),
+    npv: npv(f.discountRate, flows), irr: irr(flows), lcoe: pvEnergy > 0 ? pvCosts / pvEnergy : 0, savings25: savingsSum,
+    roi: cumulative[cumulative.length - 1] / cx.total, generationByYear: gens, loan,
   };
 }

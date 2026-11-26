@@ -146,7 +146,7 @@ export function sizeSystem(input: SizingInput, res: SolarResource, p: CalcParams
 }
 
 const STD_INVERTERS = [3, 3.6, 5, 6, 8, 10, 12, 15, 17, 20, 25, 30, 36, 40, 50, 60, 75, 100, 110, 125, 150, 185, 215, 250, 330];
-function roundInverter(kw: number) {
+export function roundInverter(kw: number) {
   const hit = STD_INVERTERS.find((s) => s >= kw * 0.98);
   if (hit) return hit;
   return Math.ceil(kw / 330) * 330; // múltiplos de inversores string de gran potencia / centrales
