@@ -2,6 +2,7 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
+import { parseStatForm } from '@/lib/services/stats';
 import { requireStaff, signIn, signOut, can, activateAccount } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { SITE } from '@/lib/site';
@@ -145,12 +146,13 @@ export async function deactivateTariffAction(id: string, _: unknown, _fd: FormDa
   redirect(`/admin/tarifas?desactivada=${encodeURIComponent(t.code)}`);
 }
 
-export async function saveStatAction(fd: FormData) {
+export async function saveStatAction(fd: FormData): Promise<{ error: string } | { ok: true; published: boolean }> {
   const staff = await requireStaff('stats');
-  const s = z.object({ id: z.string(), label: z.string().min(2), value: z.coerce.number().min(0), unit: z.string().max(12).optional(), source_note: z.string().min(5), verified: z.boolean(), sort: z.coerce.number() })
-    .parse({ id: fd.get('id'), label: fd.get('label'), value: fd.get('value'), unit: fd.get('unit') || undefined, source_note: fd.get('source_note'), verified: fd.get('verified') === 'on', sort: fd.get('sort') });
-  await getStoreAs(staff.id).saveStat({ ...s, unit: s.unit ?? null });
+  const p = parseStatForm(fd);
+  if ('error' in p) return p;
+  try { await getStoreAs(staff.id).saveStat(p.data); } catch (e) { return { error: `No se pudo guardar: ${(e as Error).message}` }; }
   revalidatePath('/admin/indicadores'); revalidatePath('/');
+  return { ok: true, published: p.data.verified };
 }
 
 // ---------------------------------------------------------------- Productos
