@@ -13,6 +13,7 @@ const SECTIONS: [string, string, Role[]][] = [
   ['/admin/blog', 'Blog', ['superadmin', 'marketing']],
   ['/admin/usuarios', 'Usuarios', ['superadmin', 'gerencia']],
   ['/admin/identidad', 'Identidad gráfica', ['superadmin', 'marketing']],
+  ['/admin/configuracion', 'Contacto e integraciones', ['superadmin', 'marketing']],
   ['/admin/parametros', 'Parámetros de cálculo', ['superadmin', 'gerencia', 'ingenieria']],
   ['/admin/tarifas', 'Tarifas eléctricas', ['superadmin', 'gerencia', 'ingenieria']],
   ['/admin/recurso-solar', 'Recurso solar', ['superadmin', 'gerencia', 'ingenieria']],

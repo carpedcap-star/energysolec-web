@@ -7,11 +7,11 @@ import { usePathname } from 'next/navigation';
 /**
  * Gestión de consentimiento (LOPDP) + Google Consent Mode v2.
  * Analítica y publicidad quedan DENEGADAS por defecto hasta que el usuario acepte.
- * IDs de GA4 / GTM / Meta Pixel vienen de variables públicas (o del panel → Integraciones).
+ * IDs de GA4 / GTM / Meta Pixel: panel → Configuración (o variables públicas). Llegan ya validados con formato estricto
+ * (src/lib/services/site-settings.ts) porque se insertan en scripts.
  */
 type Choice = { analytics: boolean; ads: boolean; at: string };
 const KEY = 'ese_consent_v1';
-const GTM = process.env.NEXT_PUBLIC_GTM_ID, GA = process.env.NEXT_PUBLIC_GA4_ID, PIXEL = process.env.NEXT_PUBLIC_META_PIXEL_ID;
 
 declare global { interface Window { dataLayer: unknown[]; gtag?: (...a: unknown[]) => void; fbq?: (...a: unknown[]) => void } }
 
@@ -21,7 +21,8 @@ export function track(event: string, params: Record<string, unknown> = {}) {
   try { window.dataLayer?.push({ event, ...params }); window.fbq?.('trackCustom', event, params); } catch {}
 }
 
-export function ConsentAndAnalytics() {
+export function ConsentAndAnalytics({ ids }: { ids: { gtm: string | null; ga4: string | null; metaPixel: string | null } }) {
+  const GTM = ids.gtm, GA = ids.ga4, PIXEL = ids.metaPixel;
   const [choice, setChoice] = useState<Choice | null | undefined>(undefined);
   const [custom, setCustom] = useState(false);
   const [a, setA] = useState(true), [ads, setAds] = useState(false);

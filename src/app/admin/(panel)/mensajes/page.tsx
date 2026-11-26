@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { getStore } from '@/lib/data/store';
 import { requireStaff } from '@/lib/auth';
+import { salesNotifyEmail } from '@/lib/site-settings';
 import type { OutboundMessage } from '@/lib/data/types';
 import { fmtEc, summaryText } from '@/lib/services/followup';
 import { requeueMessageAction } from '../../actions';
@@ -24,7 +25,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
   const config: [string, boolean, string][] = [
     ['Proveedor de correo (RESEND_API_KEY)', !!process.env.RESEND_API_KEY, 'Sin él, los correos quedan en cola hasta configurarlo (los de seguimiento vencen en 20 h; el resto, en 3 días).'],
     ['Clave de tareas programadas (CRON_SECRET)', (process.env.CRON_SECRET?.length ?? 0) >= 16, 'Sin ella, /api/cron no corre; usa el botón de esta página.'],
-    ['Correo comercial (SALES_NOTIFY_EMAIL)', !!process.env.SALES_NOTIFY_EMAIL, 'Recibe avisos de leads nuevos y recordatorios de leads sin asesor.'],
+    ['Correo de avisos comerciales', !!(await salesNotifyEmail()), 'Configúralo en «Configuración»: recibe avisos de leads nuevos y recordatorios de leads sin asesor.'],
   ];
   return (
     <div>

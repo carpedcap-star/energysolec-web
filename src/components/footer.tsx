@@ -2,8 +2,10 @@ import Link from 'next/link';
 import { BrandLogo } from './brand-logo';
 import { NAV } from '@/lib/nav';
 import { SITE } from '@/lib/site';
+import type { Contact } from '@/lib/services/site-settings';
+import { SocialLinks } from './social-links';
 
-export function Footer({ logoDark }: { logoDark: string }) {
+export function Footer({ logoDark, contact: c }: { logoDark: string; contact: Contact & { whatsappDisplay: string } }) {
   return (
     <footer className="bg-brand-dark text-white/75">
       <div className="container-site grid gap-10 py-16 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
@@ -24,10 +26,13 @@ export function Footer({ logoDark }: { logoDark: string }) {
         <div>
           <p className="mb-4 text-sm font-semibold text-white">Contacto</p>
           <ul className="space-y-2 text-sm">
-            <li><a className="hover:text-brand" href={`https://wa.me/${SITE.whatsapp}`}>WhatsApp {SITE.whatsappDisplay}</a></li>
-            <li><a className="hover:text-brand" href={`mailto:${SITE.email}`}>{SITE.email}</a></li>
-            <li>{SITE.city}</li>
+            <li><a className="hover:text-brand" href={`https://wa.me/${c.whatsapp}`}>WhatsApp {c.whatsappDisplay}</a></li>
+            <li><a className="hover:text-brand [overflow-wrap:anywhere]" href={`mailto:${c.email}`}>{c.email}</a></li>
+            {c.phone && <li>Teléfono {c.phone}</li>}
+            <li>{[c.address, c.city].filter(Boolean).join(' · ')}</li>
+            {c.hours && <li>{c.hours}</li>}
           </ul>
+          <SocialLinks socials={c.socials} className="mt-4" />
         </div>
       </div>
       <div className="border-t border-white/10">

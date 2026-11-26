@@ -1,4 +1,5 @@
 'use client';
+import { useSiteContact } from '../site-contact';
 import { useState } from 'react';
 import type { StudyResult } from '@/lib/engine/study';
 import { fmtKwh, fmtKwp, fmtNum, fmtPct, fmtUsd, fmtYears, MONTHS_ES } from '@/lib/format';
@@ -18,7 +19,8 @@ export function StudyResults({ r, code, token }: { r: StudyResult; code: string;
     const res = await fetch('/api/study/visit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, token, preferred }) }).catch(() => null);
     setVisit(res?.ok ? 'ok' : 'error'); if (res?.ok) track('visit_requested', { code });
   }
-  const wa = waLink(`Hola, acabo de generar mi estudio solar ${code} (${fmtKwp(z.kwp)}). Quisiera conversar con un asesor.`);
+  const company = useSiteContact();
+  const wa = waLink(`Hola, acabo de generar mi estudio solar ${code} (${fmtKwp(z.kwp)}). Quisiera conversar con un asesor.`, company.whatsapp);
 
   return (
     <div className="space-y-8">

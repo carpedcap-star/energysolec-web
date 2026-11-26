@@ -5,6 +5,7 @@ import { studyToken } from '@/lib/token';
 import { renderStudyPdf } from '@/lib/pdf/report';
 import { sendEmail, notifySales, esc } from '@/lib/services/messaging';
 import { SITE } from '@/lib/site';
+import { getContact } from '@/lib/site-settings';
 import { fmtKwp, fmtUsd } from '@/lib/format';
 import type { StudyInput } from '@/lib/engine/study';
 
@@ -43,6 +44,7 @@ export async function POST(req: Request) {
     // Entregas posteriores: no bloquean la respuesta al usuario si fallan
     const token = studyToken(b.code);
     const link = `${SITE.url}/calculadora/estudio/${b.code}?t=${token}`;
+    const company = await getContact();
     Promise.resolve().then(async () => {
       const pdf = await renderStudyPdf({ ...study, unlocked: true }, { name: b.name, email: b.email, company: b.company || null, phone: b.phone || null });
       await sendEmail({
@@ -51,7 +53,7 @@ export async function POST(req: Request) {
         html: `<div style="font-family:Arial,sans-serif;color:#282626"><h2>Hola ${esc(b.name)},</h2><p>Adjuntamos tu estudio de prefactibilidad solar <b>${b.code}</b>.</p>
           <p>Sistema recomendado: <b>${fmtKwp(r.sizing.kwp)}</b> · Inversión estimada: <b>${fmtUsd(base.capex.total)}</b> · Ahorro año 1: <b>${fmtUsd(base.savingYear1)}</b></p>
           <p><a href="${link}">Ver el estudio en línea</a></p><p style="color:#666;font-size:12px">${esc(r.disclaimer)}</p>
-          <p>Energy Solutions Ecuador · WhatsApp ${SITE.whatsappDisplay}</p></div>`,
+          <p>Energy Solutions Ecuador · WhatsApp ${company.whatsappDisplay}</p></div>`,
       });
       await notifySales(`Nuevo lead calculadora: ${b.name} (${input.segment})`, [
         ['Estudio', b.code], ['Empresa', b.company], ['Correo', b.email], ['WhatsApp', b.phone], ['Provincia', input.province],

@@ -2,6 +2,7 @@ import 'server-only';
 import { getStore } from '../data/store';
 import type { AttachmentRef } from '../data/types';
 import { afterFailure, isRetryable } from './followup';
+import { salesNotifyEmail } from '../site-settings';
 
 type Attachment = { filename: string; content: Buffer };
 export const emailProviderConfigured = () => !!process.env.RESEND_API_KEY;
@@ -57,7 +58,7 @@ export async function sendEmail(opts: { to: string; subject: string; html: strin
 }
 
 export async function notifySales(subject: string, lines: [string, string | number | null | undefined][], link?: string) {
-  const to = process.env.SALES_NOTIFY_EMAIL;
+  const to = await salesNotifyEmail();
   if (!to) return;
   const rows = lines.filter(([, v]) => v != null && v !== '').map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#666">${esc(k)}</td><td style="padding:4px 0"><b>${esc(String(v))}</b></td></tr>`).join('');
   await sendEmail({ to, subject, template: 'aviso_comercial', html: `<div style="font-family:Arial,sans-serif"><h2 style="margin:0 0 12px">${esc(subject)}</h2><table>${rows}</table>${link ? `<p><a href="${link}">Abrir en el panel</a></p>` : ''}</div>` });

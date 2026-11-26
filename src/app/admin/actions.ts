@@ -25,6 +25,7 @@ import { sendTradeAccessEmail, tradeAccessUrl } from '@/lib/services/trade-mail'
 import { runJobs } from '@/lib/services/cron-jobs';
 import { parseEcLocal } from '@/lib/services/followup';
 import { checkSources, type SourceCheck } from '@/lib/engine/resource';
+import { parseSettingsForm } from '@/lib/services/site-settings';
 
 export async function loginAction(_: unknown, fd: FormData) {
   const err = await signIn(String(fd.get('email') ?? ''), String(fd.get('password') ?? ''), (fd.get('role') as AppRole) || 'superadmin');
@@ -670,4 +671,19 @@ export async function clearSolarCacheAction(_: unknown, _fd: FormData): Promise<
   try { n = await getStore().clearSolarCache(); } catch (e) { return { error: (e as Error).message }; }
   revalidatePath('/admin/recurso-solar');
   return { cleared: n };
+}
+
+// ---------------------------------------------------------------- Contacto, avisos e integraciones
+export async function saveSettingsAction(_: unknown, fd: FormData): Promise<{ error?: string }> {
+  const staff = await requireStaff('settings');
+  const parsed = parseSettingsForm(fd);
+  if ('error' in parsed) return { error: parsed.error };
+  const store = getStore();
+  try {
+    await store.saveSetting('contact', parsed.data.contact, staff.id);
+    await store.saveSetting('notifications', parsed.data.notifications, staff.id);
+    await store.saveSetting('integrations_public', parsed.data.integrations, staff.id);
+  } catch (e) { return { error: (e as Error).message }; }
+  revalidatePath('/', 'layout'); // el contacto aparece en todas las páginas (pie, botón de WhatsApp, datos estructurados)
+  redirect('/admin/configuracion?guardado=1');
 }

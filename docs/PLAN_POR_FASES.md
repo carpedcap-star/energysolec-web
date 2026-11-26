@@ -27,7 +27,7 @@
 - ✅ Blog con editor Markdown, vista previa, imágenes, programación, categorías, SEO editable y datos estructurados `BlogPosting`.
 - ✅ Usuarios y roles: invitación por enlace de un solo uso, activación con contraseña propia, desactivación con reasignación de leads, matriz de permisos.
 - ✅ Identidad gráfica: colores con control de contraste, logos y favicon desde el panel.
-- Pantallas del panel para datos de contacto e integraciones. Hoy se gestionan desde Supabase Studio.
+- ✅ Pantalla del panel para contacto (WhatsApp, correo, teléfono, dirección, horario, mapa, redes), correo de avisos internos e IDs de analítica; estado de las integraciones del servidor.
 - ✅ Formularios guiados para parámetros y tarifas, con reglas de coherencia, vista previa de factura y validación por Gerencia.
 - ✅ Carga de planilla eléctrica en PDF o foto con lectura por IA (API de Claude) y revisión y confirmación del cliente antes de calcular; planilla visible en la ficha del lead (migración `0005`). Requiere `ANTHROPIC_API_KEY`; las planillas sin lead se borran a los 7 días.
 - Flujo industrial con carga de documentos (curva de carga, planos).

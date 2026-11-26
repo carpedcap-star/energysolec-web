@@ -6,6 +6,7 @@ import { CACHE_TTL_DAYS, checkSources, REFERENCE_POINTS } from '../engine/resour
 import { SITE } from '../site';
 import { afterFailure, billPurgeBefore, buildDigests, digestEmail, isExpired } from './followup';
 import { deliverEmail, emailProviderConfigured, sendEmail } from './messaging';
+import { salesNotifyEmail } from '../site-settings';
 
 /**
  * Tareas programadas. Las ejecuta /api/cron (Vercel Cron u otro programador) y el botón del panel (/admin/mensajes).
@@ -56,17 +57,18 @@ async function retryOne(m: OutboundMessage, out: Record<string, number>) {
   }
 }
 
-/** Resumen diario por asesor; los leads sin asesor van al correo comercial (SALES_NOTIFY_EMAIL). */
+/** Resumen diario por asesor; los leads sin asesor van al correo comercial (panel → Configuración, o SALES_NOTIFY_EMAIL). */
 async function sendReminders(): Promise<Summary> {
   const store = getStore();
   const [leads, users] = await Promise.all([store.listLeadsForReminders(), store.listUsers()]);
   const digests = buildDigests(leads, Date.now());
+  const salesTo = await salesNotifyEmail();
   const out = { resumenes: 0, actividades: 0, sin_contactar: 0, sin_destinatario: 0 };
   const marks: { id: string; reminded_for?: string; uncontacted?: boolean }[] = [];
   for (const d of digests) {
     const advisor = d.advisorId ? users.find((u) => u.id === d.advisorId && u.active) : null;
     // Asesor desactivado o sin asignar: el resumen va al correo comercial general.
-    const to = advisor?.email ?? process.env.SALES_NOTIFY_EMAIL;
+    const to = advisor?.email ?? salesTo;
     if (!to) { out.sin_destinatario++; continue; }
     const mail = digestEmail(advisor ? d : { ...d, advisorId: null }, advisor?.full_name ?? 'equipo comercial', SITE.url);
     await sendEmail({ to, template: 'recordatorio_seguimiento', ...mail });

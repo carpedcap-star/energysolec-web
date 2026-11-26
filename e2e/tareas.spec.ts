@@ -30,7 +30,9 @@ test.describe('tareas programadas y seguimiento', () => {
     expect(adv.payload.html).toContain('Lead Vencido');
     expect(adv.payload.html).toContain('vencida');
     expect(adv.payload.html).not.toContain('Lead Futuro');
-    expect(rem.find((m) => m.to_address === 'ventas@energysolec.test')!.payload.html).toContain('Lead Sin Contactar');
+    // Leads sin asesor: al correo de avisos configurado en el panel (si no hay, SALES_NOTIFY_EMAIL del servidor).
+    const salesTo = d.settings?.notifications?.salesEmail ?? 'ventas@energysolec.test';
+    expect(rem.find((m) => m.to_address === salesTo)?.payload.html).toContain('Lead Sin Contactar');
 
     const again = await (await request.get('/api/cron?tareas=recordatorios', { headers: cronHeaders })).json();
     expect(again.summary.recordatorios.resumenes).toBe(0);

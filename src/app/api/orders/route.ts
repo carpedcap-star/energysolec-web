@@ -7,6 +7,7 @@ import { notifySales, sendEmail, esc } from '@/lib/services/messaging';
 import { SITE, waLink } from '@/lib/site';
 import { fmtUsd2 } from '@/lib/format';
 import { getTradeAccount } from '@/lib/trade-auth';
+import { getContact } from '@/lib/site-settings';
 import { tierLabel } from '@/lib/services/trade';
 
 export const runtime = 'nodejs';
@@ -45,7 +46,8 @@ export async function POST(req: Request) {
   });
   const msg = orderMessage({ ...order, items: cart.items, customer_type: customerType, price_tier: tier, company: trade?.company });
   // 2) WhatsApp Business API si existe integración autorizada; si no, enlace wa.me para que el cliente confirme el envío
-  const viaApi = await sendCloudText(SITE.whatsapp, msg);
+  const company = await getContact();
+  const viaApi = await sendCloudText(company.whatsapp, msg);
   await store.setOrderWhatsapp(order.id, msg, viaApi ? 'cloud_api' : 'wa_link');
   await store.track('order_created', { total: cart.total, items: cart.items.length, tier });
 
@@ -55,5 +57,5 @@ export async function POST(req: Request) {
     notifySales(`Nuevo pedido ${order.number}`, [['Cliente', b.name], ['Tipo', customerType], ['Cuenta comercial', trade ? `${trade.company} (${tierLabel(trade.tier)})` : null], ['Teléfono', b.phone], ['Ciudad', b.city], ['Total estimado', fmtUsd2(cart.total)], ['Instalación', b.needsInstallation ? 'Sí' : 'No']], `${SITE.url}/admin/pedidos/${order.id}`),
   ]);
 
-  return json({ number: order.number, total: cart.total, whatsappUrl: waLink(msg), sentViaApi: viaApi });
+  return json({ number: order.number, total: cart.total, whatsappUrl: waLink(msg, company.whatsapp), sentViaApi: viaApi });
 }

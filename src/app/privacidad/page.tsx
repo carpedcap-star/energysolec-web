@@ -1,12 +1,13 @@
 import { SITE } from '@/lib/site';
+import { getContact } from '@/lib/site-settings';
 export const metadata = { title: 'Política de privacidad', alternates: { canonical: '/privacidad' } };
-export default function Page() {
+export default async function Page() {
   return (
     <section className="pb-24 pt-32"><div className="container-site prose max-w-3xl">
       <h1 className="font-display text-4xl font-extrabold">Política de privacidad y protección de datos</h1>
       <p className="placeholder-badge mt-4">Borrador — requiere revisión legal antes de publicar</p>
       <div className="mt-8 space-y-5 leading-relaxed text-ink/85">
-        <p><b>Responsable:</b> {SITE.legalName}. Contacto para ejercer derechos: {SITE.email}. Versión {SITE.privacyPolicyVersion}.</p>
+        <p><b>Responsable:</b> {SITE.legalName}. Contacto para ejercer derechos: {(await getContact()).email}. Versión {SITE.privacyPolicyVersion}.</p>
         <p><b>Finalidades.</b> (1) Atender tu solicitud, generar y enviarte tu estudio solar, gestionar pedidos y cotizaciones — base: ejecución de medidas precontractuales a tu pedido. (2) Enviarte información comercial y promociones — solo con tu consentimiento expreso, separado y revocable. Negarte a la finalidad (2) no impide recibir tu estudio ni realizar tu pedido.</p>
         <p><b>Datos tratados.</b> Identificación y contacto, ubicación del proyecto, datos de consumo eléctrico y de facturación que nos proporcionas, y datos técnicos de navegación según tus preferencias de cookies.</p>
         <p><b>Conservación.</b> Mientras exista relación comercial y durante los plazos legales aplicables; los datos de prospectos sin relación comercial se revisan periódicamente.</p>

@@ -2,6 +2,7 @@ import 'server-only';
 import path from 'node:path';
 import React from 'react';
 import { Document, Page, Text, View, Image, StyleSheet, renderToBuffer } from '@react-pdf/renderer';
+import { getContact } from '../site-settings';
 import type { Study } from '../data/types';
 import type { StudyInput } from '../engine/study';
 import { SITE } from '../site';
@@ -30,10 +31,10 @@ const s = StyleSheet.create({
   warn: { backgroundColor: '#fff8db', borderLeftWidth: 3, borderLeftColor: Y, padding: 8, marginVertical: 6, fontSize: 8.5 },
 });
 
-function Footer({ code }: { code: string }) {
+function Footer({ code, wa }: { code: string; wa: string }) {
   return (
     <View style={s.footer} fixed>
-      <Text>{SITE.legalName} · {SITE.domain} · WhatsApp {SITE.whatsappDisplay}</Text>
+      <Text>{SITE.legalName} · {SITE.domain} · WhatsApp {wa}</Text>
       <Text render={({ pageNumber, totalPages }) => `Estudio ${code} · ${pageNumber}/${totalPages}`} />
     </View>
   );
@@ -83,7 +84,7 @@ function CashflowChart({ cum }: { cum: number[] }) {
 
 export type ReportContact = { name: string; email: string; company: string | null; phone: string | null };
 
-function StudyDoc({ study, contact }: { study: Study; contact: ReportContact }) {
+function StudyDoc({ study, contact, company }: { study: Study; contact: ReportContact; company: { whatsappDisplay: string; email: string } }) {
   const r = study.results, z = r.sizing, b = r.scenarios.base;
   const input = study.inputs as StudyInput;
   const date = new Date(study.created_at).toLocaleDateString('es-EC', { day: '2-digit', month: 'long', year: 'numeric' });
@@ -146,7 +147,7 @@ function StudyDoc({ study, contact }: { study: Study; contact: ReportContact }) 
           <Kpi v={fmtUsd(b.savingYear1)} l="Ahorro año 1" />
           <Kpi v={fmtYears(b.simplePayback)} l="Retorno simple" />
         </View>
-        <Footer code={study.code} />
+        <Footer code={study.code} wa={company.whatsappDisplay} />
       </Page>
 
       {/* Finanzas */}
@@ -188,7 +189,7 @@ function StudyDoc({ study, contact }: { study: Study; contact: ReportContact }) 
           <Kpi v={`${fmtNum(r.environment.co2Tons25, 0)} t`} l="CO₂ evitado en 25 años" />
           <Kpi v={fmtNum(r.environment.treesEquivalent, 0)} l="Árboles equivalentes / año" />
         </View>
-        <Footer code={study.code} />
+        <Footer code={study.code} wa={company.whatsappDisplay} />
       </Page>
 
       {/* Supuestos */}
@@ -213,14 +214,14 @@ function StudyDoc({ study, contact }: { study: Study; contact: ReportContact }) 
         <View style={{ marginTop: 18, padding: 14, backgroundColor: G, color: '#fff' }}>
           <Text style={[s.h3, { color: Y }]}>Siguiente paso: visita técnica</Text>
           <Text>Agenda una inspección para validar la cubierta, el tablero eléctrico, las sombras y tu curva de consumo real.</Text>
-          <Text style={{ marginTop: 6 }}>WhatsApp {SITE.whatsappDisplay} · {SITE.email} · {SITE.domain}</Text>
+          <Text style={{ marginTop: 6 }}>WhatsApp {company.whatsappDisplay} · {company.email} · {SITE.domain}</Text>
         </View>
-        <Footer code={study.code} />
+        <Footer code={study.code} wa={company.whatsappDisplay} />
       </Page>
     </Document>
   );
 }
 
 export async function renderStudyPdf(study: Study, contact: ReportContact): Promise<Buffer> {
-  return renderToBuffer(<StudyDoc study={study} contact={contact} />);
+  return renderToBuffer(<StudyDoc study={study} contact={contact} company={await getContact()} />);
 }

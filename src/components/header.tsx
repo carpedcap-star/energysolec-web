@@ -1,4 +1,5 @@
 'use client';
+import { useSiteContact } from './site-contact';
 import Link from 'next/link';
 import { BrandLogo } from './brand-logo';
 import { usePathname } from 'next/navigation';
@@ -65,9 +66,10 @@ export function Header({ logo, logoDark }: { logo: string; logoDark: string }) {
 
 /** Botón flotante permanente de WhatsApp */
 export function WhatsAppFab() {
+  const c = useSiteContact();
   return (
-    <a href={waLink('Hola, quisiera información sobre soluciones solares de Energy Solutions Ecuador.')} target="_blank" rel="noopener"
-      data-track="whatsapp_click" className="fixed bottom-5 right-5 z-40 grid h-14 w-14 place-items-center rounded-full bg-[#25D366] text-white shadow-lg transition hover:scale-105" aria-label={`Escríbenos por WhatsApp al ${SITE.whatsappDisplay}`}>
+    <a href={waLink('Hola, quisiera información sobre soluciones solares de Energy Solutions Ecuador.', c.whatsapp)} target="_blank" rel="noopener"
+      data-track="whatsapp_click" className="fixed bottom-5 right-5 z-40 grid h-14 w-14 place-items-center rounded-full bg-[#25D366] text-white shadow-lg transition hover:scale-105" aria-label={`Escríbenos por WhatsApp al ${c.whatsappDisplay}`}>
       <IconWhatsapp className="h-7 w-7" />
     </a>
   );

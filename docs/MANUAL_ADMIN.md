@@ -20,6 +20,7 @@ Acceso: `https://www.energysolec.com/admin/login` con el usuario que te asigne e
 | Asignar asesor a un lead | ✓ | ✓ | | | | |
 | Mensajes y tareas | ✓ | ✓ | | | | |
 | Recurso solar | ✓ | ✓ | | | ✓ | |
+| Contacto e integraciones | ✓ | | ✓ | | | |
 
 ## CRM
 
@@ -175,9 +176,16 @@ Acceso: `https://www.energysolec.com/admin/login` con el usuario que te asigne e
 - **Vaciar caché** obliga a volver a consultar las fuentes, por ejemplo si una de ellas publica datos nuevos.
 - Si ninguna fuente responde, el estudio usa el rendimiento regional de **Parámetros** y se lo advierte al cliente.
 
+## Contacto e integraciones
+
+- **Contacto público**: WhatsApp comercial (con código de país; también acepta 09X XXX XXXX), correo, teléfono fijo, dirección, horario, enlace de Google Maps y redes sociales. Al guardar se actualiza en todo el sitio: pie de página, botón de WhatsApp, página de contacto, correos, PDF del estudio, política de privacidad y datos para buscadores.
+- **Avisos internos**: el correo que recibe los avisos de leads, pedidos y cuentas comerciales y los recordatorios de leads sin asesor. No se muestra en el sitio.
+- **Analítica y publicidad**: identificadores de Google Tag Manager, Google Analytics 4 y Meta Pixel. Solo se activan si el visitante acepta las cookies. Un identificador con otro formato se rechaza.
+- **Integraciones del servidor** (Supabase, correo, WhatsApp Cloud API, anti-spam, IA, tareas): usan claves secretas y se configuran en Vercel; la pantalla solo indica si están activas.
+
 ## Otros datos
 
-Hasta que se entreguen las pantallas de la fase 2, se gestionan desde **Supabase Studio → Table Editor** (tabla `site_settings`: datos de contacto e integraciones) y **Storage → public-media** para imágenes y fichas técnicas. Reglas que la base de datos hace cumplir:
+Las imágenes y fichas técnicas también pueden revisarse en **Supabase Studio → Storage → public-media**. Reglas que la base de datos hace cumplir:
 
 - Un producto con `is_placeholder = true` no puede publicarse.
 - Un proyecto muestra el cliente solo con `client_name_authorized`, la ubicación en el mapa solo con `location_authorized`, el ahorro solo con `financials_authorized` y el testimonio solo con `testimonial_verified` (vista `projects_public`; la clave pública no puede leer esas columnas de la tabla).

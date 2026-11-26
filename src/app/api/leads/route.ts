@@ -3,6 +3,7 @@ import { clientMeta, guard, json, verifyHuman } from '@/lib/request';
 import { GenericLeadBody, firstError } from '@/lib/schemas';
 import { notifySales, sendEmail, esc } from '@/lib/services/messaging';
 import { SITE } from '@/lib/site';
+import { getContact } from '@/lib/site-settings';
 
 export const runtime = 'nodejs';
 
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
   await store.track('lead_created', { source: b.source, segment: b.segment });
   await Promise.allSettled([
     sendEmail({ to: b.email, template: 'confirmacion_solicitud', subject: 'Recibimos tu solicitud — Energy Solutions Ecuador',
-      html: `<div style="font-family:Arial,sans-serif"><p>Hola ${esc(b.name)}, recibimos tu solicitud${b.topic ? ` sobre <b>${esc(b.topic)}</b>` : ''}. Un asesor te contactará pronto.</p><p>WhatsApp ${SITE.whatsappDisplay}</p></div>` }),
+      html: `<div style="font-family:Arial,sans-serif"><p>Hola ${esc(b.name)}, recibimos tu solicitud${b.topic ? ` sobre <b>${esc(b.topic)}</b>` : ''}. Un asesor te contactará pronto.</p><p>WhatsApp ${(await getContact()).whatsappDisplay}</p></div>` }),
     notifySales(`Nuevo lead (${b.source}): ${b.name}`, [['Tema', b.topic], ['Segmento', b.segment], ['Empresa', b.company], ['Correo', b.email], ['WhatsApp', b.phone], ['Ciudad', b.city], ['Factura mensual', b.monthlyBillUsd], ['Mensaje', b.message]], `${SITE.url}/admin/leads/${lead.id}`),
   ]);
   return json({ ok: true });

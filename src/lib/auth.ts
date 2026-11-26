@@ -30,6 +30,7 @@ export const PERMS = {
   users_read: ['superadmin', 'gerencia'],   // RLS: profiles self_read
   users: ['superadmin'],   // RLS: profiles admin_write
   identity: ['superadmin', 'marketing'],   // RLS: site_settings
+  settings: ['superadmin', 'marketing'],   // RLS: site_settings (contact, notifications, integrations_public)
   bills: ['superadmin', 'gerencia', 'ingenieria', 'ventas'],
   trade: ['superadmin', 'gerencia', 'ventas'],   // RLS: trade_accounts (0002)
   trade_approve: ['superadmin', 'gerencia'],
