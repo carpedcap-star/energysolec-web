@@ -32,11 +32,12 @@ export const PARAM_SECTIONS: ParamSection[] = [
   },
   {
     id: 'implantacion', title: 'Tipo de implantación',
-    intro: 'Adicional por kWp (sin IVA) sobre el precio del sistema según dónde se instala, y área que ocupa cada kWp. Con 0 no se suma nada.',
+    intro: 'Área que ocupa cada kWp (factor de ocupación) por tipo de superficie, y adicional por kWp sin IVA solo si el precio llave en mano NO incluye esa estructura (con 0 no se suma nada).',
     fields: [
       ...MOUNTING_PRICE_KEYS.map((k) => num(`pricing.mountingUsdPerKwp.${k}`, `Adicional: ${MOUNTING_LABEL[k]}`, 'USD/kWp')),
       ...([['techo_metalico', 'techo de metal'], ['techo_inclinado', 'techo inclinado'], ['losa', 'losa'], ['terreno', 'terreno']] as const)
         .map(([k, l]) => num(`technical.mountingM2PerKwp.${k}`, `Área por kWp en ${l}`, 'm²/kWp', k === 'losa' || k === 'terreno' ? 'Estructura inclinada: incluye separación entre filas.' : undefined)),
+      { path: 'technical.groundLast', label: 'Usar el terreno solo después de cubiertas y losas', kind: 'bool', hint: 'Si el cliente indica varias superficies, se llenan primero los techos y losas.' },
     ],
   },
   {

@@ -44,9 +44,10 @@ export function BillUpload({ mode, result, onRead, onDiscard }: { mode: string; 
   const [err, setErr] = useState('');
   const human = useTurnstile(TURNSTILE_ACTIONS.bill);
 
-  async function read() {
+  // Se lee en cuanto hay archivo y autorización: sin botones adicionales.
+  async function read(file: File | null, consent: boolean) {
     if (!file) return setErr('Selecciona el archivo de tu planilla.');
-    if (!consent) return setErr('Para leer tu planilla necesitamos tu autorización.');
+    if (!consent) return setErr('Para leer tu planilla, marca la autorización.');
     setBusy(true); setErr('');
     const blob = await shrinkImage(file);
     if (blob.size > MAX_BYTES) { setBusy(false); return setErr('El archivo supera el máximo de 4 MB. Si es un PDF escaneado, súbelo como foto.'); }
@@ -71,7 +72,7 @@ export function BillUpload({ mode, result, onRead, onDiscard }: { mode: string; 
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="font-semibold">Leímos tu planilla{r.billingPeriod ? ` de ${r.billingPeriod}` : ''}</p>
-            <p className="mt-1 text-muted">Completamos los campos de abajo con estos datos. <b className="text-ink">Revísalos y corrígelos</b> antes de continuar: la lectura automática puede equivocarse.</p>
+            <p className="mt-1 text-muted">Revisa estos datos: la lectura automática puede equivocarse. Si algo está mal, descarta la planilla e ingresa tu consumo.</p>
           </div>
           <button type="button" onClick={onDiscard} className="btn-ghost !px-3 !py-1.5 text-xs">Descartar planilla</button>
         </div>
@@ -80,6 +81,7 @@ export function BillUpload({ mode, result, onRead, onDiscard }: { mode: string; 
             ['Distribuidora', r.distributorName ?? r.distributor ?? '—'], ['Tarifa', r.tariffCategory ?? '—'], ['Consumo del mes', num(r.energyKwh, 'kWh')],
             ['Servicio eléctrico', r.electricityUsd == null ? '—' : `$${r.electricityUsd.toLocaleString('es-EC')}`],
             ['Total a pagar', r.totalUsd == null ? '—' : `$${r.totalUsd.toLocaleString('es-EC')}`],
+            ...(r.electricityUsd != null && r.energyKwh ? [['Costo efectivo del kWh', `$${(r.electricityUsd / r.energyKwh).toFixed(4)}`]] : []),
             ['Demanda', num(r.demandKw, 'kW')], ['Meses de historial', String(r.months)],
             ...(r.voltage ? [['Nivel de voltaje', ({ BV: 'Bajo voltaje', MV: 'Medio voltaje', AV1: 'Alto voltaje', AV2: 'Alto voltaje' } as Record<string, string>)[r.voltage] ?? r.voltage]] : []),
             ...(r.powerFactor != null ? [['Factor de potencia', r.powerFactor.toLocaleString('es-EC')]] : []),
@@ -90,6 +92,7 @@ export function BillUpload({ mode, result, onRead, onDiscard }: { mode: string; 
           ))}
         </dl>
         {result.check?.ok && <p className="mt-4 text-emerald-800" role="status">Comprobamos tu planilla con el pliego tarifario oficial: el servicio eléctrico calculado (${result.check.computedUsd.toFixed(2)}) coincide con lo facturado (${result.check.billedUsd.toFixed(2)}).</p>}
+        {result.proposal.specialTariff && <p className="mt-4 text-amber-900">Tu tarifa ({result.proposal.specialTariff}) es especial: calcularemos un estudio preliminar con el costo efectivo de tu planilla.</p>}
         {!!r.uncertain?.length && <p className="mt-4 text-amber-900">Revisa con atención: algunos datos no se leyeron con claridad.</p>}
         {result.proposal.warnings.length > 0 && (
           <ul className="mt-4 list-disc space-y-1 pl-5 text-amber-900">{result.proposal.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
@@ -100,22 +103,22 @@ export function BillUpload({ mode, result, onRead, onDiscard }: { mode: string; 
 
   return (
     <div className="rounded-2xl border border-dashed border-line p-5 text-sm">
-      <p className="font-semibold">¿Tienes tu planilla eléctrica a mano?</p>
-      <p className="mt-1 text-muted">Súbela en PDF o como foto y la leemos por ti. Después podrás revisar y corregir cada dato.</p>
+      <p className="font-semibold">Sube tu planilla en PDF o como foto</p>
+      <p className="mt-1 text-muted">La leemos por ti: consumo, valor, distribuidora, tarifa, demanda y franjas horarias.</p>
       <div className="mt-4">
         <label className="label" htmlFor={`${id}-f`}>Planilla (PDF, JPG, PNG o WebP; máx. 4 MB)</label>
         <input id={`${id}-f`} type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/heic"
-          onChange={(e) => { setFile(e.target.files?.[0] ?? null); setErr(''); }}
+          onChange={(e) => { const f = e.target.files?.[0] ?? null; setFile(f); setErr(''); if (f && consent) void read(f, true); }}
           className="block w-full max-w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-brand-dark file:px-3 file:py-2 file:text-white" />
       </div>
       <label className="mt-4 flex items-start gap-2 text-muted">
-        <input type="checkbox" checked={consent} onChange={(e) => { setConsent(e.target.checked); setErr(''); }} className="mt-1" />
+        <input type="checkbox" checked={consent} onChange={(e) => { setConsent(e.target.checked); setErr(''); if (e.target.checked && file && !busy) void read(file, true); }} className="mt-1" />
         <span>{BILL_CONSENT_TEXT} Ver la <Link href="/privacidad" target="_blank" className="underline">política de privacidad</Link>.</span>
       </label>
       {human.slot && <div className="mt-3">{human.slot}</div>}
       {err && <p className="mt-3 text-red-600" role="alert">{err}</p>}
-      <button type="button" onClick={read} disabled={busy} className="btn-dark mt-4 !py-2">{busy ? 'Leyendo tu planilla… puede tardar hasta un minuto' : 'Leer mi planilla'}</button>
-      <p className="mt-3 text-xs text-muted">Si prefieres, ingresa los datos manualmente abajo.</p>
+      {busy && <p className="mt-3 font-medium" role="status">Leyendo tu planilla… puede tardar hasta un minuto.</p>}
+      {!busy && err && file && consent && <button type="button" onClick={() => read(file, consent)} className="btn-dark mt-3 !py-2">Intentar de nuevo</button>}
     </div>
   );
 }

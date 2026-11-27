@@ -47,7 +47,8 @@ export async function POST(req: Request) {
   const data = sanitizeExtraction(r.data);
   const proposal = toCalculatorInput(data, mode);
   // Comprobación determinista con el pliego oficial (la IA solo leyó).
-  const check = 'error' in proposal ? null : checkBill(data, await store.getActiveParams());
+  let check: ReturnType<typeof checkBill> = null;
+  try { check = 'error' in proposal ? null : checkBill(data, await store.getActiveParams()); } catch (e) { console.error('[planilla] comprobación con el pliego', e); }
   if (check && !check.ok && !('error' in proposal))
     proposal.warnings.push(`Con la tarifa ${check.tariffCode} el servicio eléctrico de ese mes daría $${check.computedUsd.toFixed(2)} y tu planilla cobra $${check.billedUsd.toFixed(2)}: revisa la categoría tarifaria y los valores leídos.`);
   // Sin datos útiles no se conserva el archivo (minimización de datos).

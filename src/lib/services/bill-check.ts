@@ -12,7 +12,7 @@ export type BillCheck = { tariffCode: string; computedUsd: number; billedUsd: nu
 const SERVICE_KINDS = new Set(['energia', 'demanda', 'comercializacion', 'perdidas_transformador', 'penalizacion_fp']);
 
 export function checkBill(d: BillData, p: CalcParams, tolerance = 0.12): BillCheck {
-  if (!d.segment || d.energyKwh == null) return null;
+  if (!d.segment || d.energyKwh == null || d.specialTariff) return null;
   const fromCharges = d.charges.filter((c) => SERVICE_KINDS.has(c.kind)).reduce((a, c) => a + c.usd, 0);
   const billed = fromCharges > 0 ? fromCharges : d.electricityUsd;
   if (!billed) return null;

@@ -25,16 +25,19 @@ export function AlternativesComparison({ r }: { r: StudyResult }) {
       {rec && s && (
         <div className="card overflow-hidden">
           <div className="bg-brand-dark p-5 text-white sm:p-6">
-            <p className="text-sm text-white/70">Con {rec.name} ({fmtKwp(rec.kwp)})</p>
-            <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-5">
-              <Big l="Hoy pagas al mes" v={fmtUsd(s.currentMonthlyUsd)} />
-              <Big l="Con energía solar pagarías" v={rec.key === 'offGrid' ? 'Sin planilla' : fmtUsd(s.residualMonthlyUsd)} />
-              <Big l="Ahorras al mes" v={fmtUsd(s.savingMonthlyUsd)} accent />
-              <Big l="Inviertes (IVA incl.)" v={fmtUsd(s.investmentUsd)} />
-              <Big l="Recuperas tu inversión en" v={fmtYears(s.paybackYears)} accent />
+            <p className="text-sm text-white/70">Tu sistema recomendado: {rec.name}</p>
+            <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <Big l="Potencia recomendada" v={fmtKwp(rec.kwp)} />
+              <Big l="Paneles" v={String(rec.modules)} />
+              <Big l="Inversión (IVA incl.)" v={fmtUsd(s.investmentUsd)} />
+              <Big l="Retorno simple" v={fmtYears(s.paybackYears)} accent />
+              <Big l="Ahorro mensual" v={fmtUsd(s.savingMonthlyUsd)} accent />
+              <Big l="Ahorro anual" v={fmtUsd(s.savingYearUsd)} accent />
+              <Big l="Factura estimada después" v={rec.key === 'offGrid' ? 'Sin planilla' : `${fmtUsd(s.residualMonthlyUsd)}/mes`} />
+              <Big l="Hoy pagas" v={`${fmtUsd(s.currentMonthlyUsd)}/mes`} />
             </div>
           </div>
-          <p className="px-5 py-3 text-xs text-muted sm:px-6">Lo que pagas hoy: {SOURCE[r.billing?.source ?? 'estimada']}. Retorno simple = inversión ÷ ahorro anual ({fmtUsd(s.savingYearUsd)}), sin descontar mantenimiento.</p>
+          <p className="px-5 py-3 text-xs text-muted sm:px-6">Lo que pagas hoy: {SOURCE[r.billing?.source ?? 'estimada']}. Retorno simple = inversión ÷ ahorro anual, sin descontar mantenimiento; el ahorro no incluye los cargos que seguirás pagando.</p>
         </div>
       )}
       <h3 id="alt-h" className="font-display text-2xl font-extrabold">Compara tus alternativas</h3>
@@ -48,16 +51,15 @@ export function AlternativesComparison({ r }: { r: StudyResult }) {
                 <h4 className="font-semibold [overflow-wrap:anywhere]">{a.name}</h4>
                 {isRec && <span className="rounded-full bg-brand px-2 py-0.5 text-xs font-semibold text-brand-dark">Recomendada</span>}
               </div>
+              {a.applicable && a.battery && <p className="mt-1 text-xs text-muted">Con baterías de {fmtNum(a.battery.nominalKwh, 0)} kWh</p>}
               {!a.applicable ? <p className="mt-3 text-sm text-muted">{a.reason ?? 'No aplica para tu caso.'}</p> : (
                 <dl className="mt-4 grid gap-2 text-sm">
                   <Row k="Potencia" v={fmtKwp(a.kwp)} />
                   <Row k="Paneles" v={String(a.modules)} />
-                  {a.battery && <Row k="Baterías" v={`${fmtNum(a.battery.nominalKwh, 0)} kWh · ${fmtNum(a.battery.backupHours ?? 0, 0)} h de respaldo`} />}
-                  <Row k="Superficie" v={`${fmtNum(a.areaM2, 0)} m²`} />
                   <Row k="Inversión (IVA incl.)" v={fmtUsd(x.investmentUsd)} strong />
                   <Row k="Ahorro mensual" v={fmtUsd(x.savingMonthlyUsd)} strong />
                   <Row k="Ahorro anual" v={fmtUsd(x.savingYearUsd)} />
-                  <Row k="Factura residual" v={a.key === 'offGrid' ? 'Sin planilla eléctrica' : `${fmtUsd(x.residualMonthlyUsd)}/mes`} />
+                  <Row k="Factura después" v={a.key === 'offGrid' ? 'Sin planilla eléctrica' : `${fmtUsd(x.residualMonthlyUsd)}/mes`} />
                   <Row k="Retorno simple" v={fmtYears(x.paybackYears)} strong />
                 </dl>
               )}
@@ -65,7 +67,7 @@ export function AlternativesComparison({ r }: { r: StudyResult }) {
           );
         })}
       </div>
-      <p className="text-xs text-muted">VAN, TIR, flujo de caja, escenarios y supuestos técnicos están en el informe PDF.</p>
+      <p className="text-xs text-muted">Superficie utilizada, distribución de paneles, baterías, VAN, TIR, flujo de caja y supuestos técnicos están en el informe PDF.</p>
     </section>
   );
 }

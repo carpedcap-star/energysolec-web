@@ -86,7 +86,7 @@ function CashflowChart({ cum }: { cum: number[] }) {
 /** La Helvetica estándar del PDF (WinAnsi) no trae ≈, →, ≤, ≥ ni subíndices: se reemplazan en los textos del motor. */
 const pdfSafe = (t: string) => t.replace(/≈/g, 'aprox.').replace(/→/g, 'a').replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/₂/g, '2');
 
-const SURFACE_LABEL: Record<string, string> = { techo_metalico: 'Techo de metal', techo_inclinado: 'Techo inclinado', losa: 'Losa', terreno: 'Terreno' };
+const SURFACE_LABEL: Record<string, string> = { techo_metalico: 'Cubierta o techo', techo_inclinado: 'Techo inclinado (teja)', losa: 'Losa de hormigón', terreno: 'Terreno o piso' };
 
 type Alt = NonNullable<Study['results']['alternatives']>[number];
 function AlternativesTable({ r }: { r: Study['results'] }) {
@@ -104,7 +104,6 @@ function AlternativesTable({ r }: { r: Study['results'] }) {
     ['Factura mensual con el sistema', (a) => (a.key === 'offGrid' ? 'Sin conexión' : fmtUsd(summaryOf(a).residualMonthlyUsd))],
     ['Ahorro mensual / anual', (a) => `${fmtUsd(summaryOf(a).savingMonthlyUsd)} / ${fmtUsd(summaryOf(a).savingYearUsd)}`],
     ['Retorno simple (bruto)', (a) => fmtYears(summaryOf(a).paybackYears)],
-    ['Retorno neto de mantenimiento y reemplazos', (a) => fmtYears(a.scenarios.base.netPayback ?? null)],
     ['VAN', (a) => fmtUsd(a.scenarios.base.npv)],
     ['TIR', (a) => (a.scenarios.base.irr == null ? 'n/d' : fmtPct(a.scenarios.base.irr))],
     ['Suministro / costo energía', (a) => (a.key === 'offGrid' ? `${a.reliability != null ? fmtPct(a.reliability) : '—'} · $${(a.costOfEnergyUsdPerKwh ?? 0).toFixed(3)}/kWh` : '—')],
@@ -215,7 +214,20 @@ function StudyDoc({ study, contact, company }: { study: Study; contact: ReportCo
               <Text style={s.h3}>Espacio disponible</Text>
               <Text>Potencia ideal para el consumo: {fmtKwp(r.surfaces.idealKwp)} · recomendada: {fmtKwp(r.surfaces.recommendedKwp)} · área necesaria: {fmtNum(r.surfaces.requiredAreaM2, 0)} m².</Text>
               <Text>Máximo instalable en el espacio indicado: {r.surfaces.maxKwp == null ? 'sin dato de área (se confirma en la visita)' : fmtKwp(r.surfaces.maxKwp)}{r.surfaces.coverageReachable != null ? ` · cobertura alcanzable ${fmtPct(r.surfaces.coverageReachable)}` : ''}.</Text>
-              {r.surfaces.perSurface.map((p) => <Text key={p.type}>• {SURFACE_LABEL[p.type] ?? p.type}: {p.areaM2 == null ? 'área por confirmar' : `${fmtNum(p.areaM2, 0)} m² (hasta ${fmtKwp(p.maxKwp ?? 0)})`}</Text>)}
+              {r.surfaces.perSurface.length > 0 && (
+                <View style={[s.table, { marginTop: 6 }]}>
+                  <View style={[s.tr, s.th]}><Text style={{ flex: 1.6 }}>Superficie (en orden de uso)</Text><Text style={{ flex: 1, textAlign: 'right' }}>Disponible</Text><Text style={{ flex: 1, textAlign: 'right' }}>Paneles</Text><Text style={{ flex: 1, textAlign: 'right' }}>Potencia</Text><Text style={{ flex: 1, textAlign: 'right' }}>Área usada</Text></View>
+                  {r.surfaces.perSurface.map((p, i) => (
+                    <View key={i} style={s.tr}>
+                      <Text style={{ flex: 1.6 }}>{SURFACE_LABEL[p.type] ?? p.type}</Text>
+                      <Text style={{ flex: 1, textAlign: 'right' }}>{p.areaM2 == null ? 'por confirmar' : `${fmtNum(p.areaM2, 0)} m²`}</Text>
+                      <Text style={{ flex: 1, textAlign: 'right' }}>{p.modules ?? '—'}</Text>
+                      <Text style={{ flex: 1, textAlign: 'right' }}>{fmtKwp(p.usedKwp)}</Text>
+                      <Text style={{ flex: 1, textAlign: 'right' }}>{p.usedAreaM2 != null ? `${fmtNum(p.usedAreaM2, 0)} m²` : '—'}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
               {r.surfaces.additionalKwp > 0 && <Text style={s.warn}>Para cubrir el consumo ideal faltarían {fmtKwp(r.surfaces.additionalKwp)} (unos {fmtNum(r.surfaces.additionalAreaM2, 0)} m² adicionales).</Text>}
             </View>
           )}
@@ -233,6 +245,7 @@ function StudyDoc({ study, contact, company }: { study: Study; contact: ReportCo
       {/* Finanzas */}
       <Page size="A4" style={s.page}>
         <Text style={s.h2}>Escenarios financieros{r.alternatives?.length ? ' — sistema conectado a la red' : ''}</Text>
+        {r.alternatives?.length ? <Text style={[s.muted, { marginBottom: 6 }]}>Análisis de sensibilidad con la factura que calcula la tarifa (no con tu factura real): sirve para comparar escenarios. El retorno simple comercial es el de la página anterior.</Text> : null}
         <View style={s.table}>
           <View style={[s.tr, s.th]}><Text style={{ flex: 2 }}>Indicador</Text>{scName.map((n) => <Text key={n} style={{ flex: 1, textAlign: 'right' }}>{n}</Text>)}</View>
           {([

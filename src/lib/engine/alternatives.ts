@@ -66,7 +66,9 @@ export type AlternativeSummary = {
 
 export type SurfaceResult = {
   idealKwp: number; maxKwp: number | null; optimalKwp: number; recommendedKwp: number; areaKnown: boolean;
-  requiredAreaM2: number; perSurface: { type: SurfaceType; areaM2: number | null; maxKwp: number | null; usedKwp: number }[];
+  /** En orden de uso (cubiertas y losas antes que el terreno si así lo configura Gerencia); `modules`, `usedKwp` y
+   * `usedAreaM2` reparten el sistema recomendado (On Grid) entre las superficies. */
+  requiredAreaM2: number; perSurface: { type: SurfaceType; areaM2: number | null; maxKwp: number | null; usedKwp: number; modules?: number; usedAreaM2?: number }[];
   coverageReachable: number | null; additionalKwp: number; additionalAreaM2: number;
 };
 
@@ -153,14 +155,18 @@ export function computeAlternatives(i: AlternativesInput): { surfaces: SurfaceRe
   const dayShare = 1 - nightShare(loadShape(i.peakHours ?? DEFAULT_PEAK[i.segment]));
   let ideal = compensation ? (annual * Math.min(1, t.coverageTarget)) / annualYield : (annual * dayShare) / annualYield;
   ideal = roundModules(ideal) * moduleKw;
-  const perSurface = i.surfaces.map((x) => ({ type: x.type, areaM2: x.areaM2, maxKwp: x.areaM2 != null && x.areaM2 > 0 ? x.areaM2 / t.mountingM2PerKwp[x.type] : null, usedKwp: 0 }));
+  // Orden de uso: con `groundLast`, cubiertas y losas antes que el terreno; dentro de cada grupo, primero las de área conocida.
+  const rank = (x: SurfaceInput) => (t.groundLast && x.type === 'terreno' ? 2 : 0) + (x.areaM2 == null ? 1 : 0);
+  const ordered = [...i.surfaces].sort((a, b) => rank(a) - rank(b));
+  const perSurface: SurfaceResult['perSurface'] = ordered.map((x) => ({ type: x.type, areaM2: x.areaM2, maxKwp: x.areaM2 != null && x.areaM2 > 0 ? x.areaM2 / t.mountingM2PerKwp[x.type] : null, usedKwp: 0 }));
   const areaKnown = perSurface.length > 0 && perSurface.every((x) => x.maxKwp != null);
   const maxKwp = areaKnown ? sum(perSurface.map((x) => x.maxKwp!)) : null;
   const m2For = (kwp: number) => {
     const types = i.surfaces.length ? i.surfaces.map((x) => x.type) : (['techo_metalico'] as SurfaceType[]);
     return kwp * (sum(types.map((x) => t.mountingM2PerKwp[x])) / types.length);
   };
-  const cap = maxKwp == null ? ideal : Math.min(ideal, roundModules(maxKwp) * moduleKw * (maxKwp >= moduleKw ? 1 : 0));
+  const maxModules = areaKnown ? sum(perSurface.map((x) => Math.floor(x.maxKwp! / moduleKw + 1e-9))) : null;
+  const cap = maxModules == null ? ideal : Math.min(ideal, maxModules * moduleKw);
   // C. Potencia económicamente óptima: la de mayor VAN (escenario base) entre un módulo y la potencia ideal disponible.
   let optimal = cap, bestNpv = -Infinity;
   if (cap > 0) for (let k = 1; k <= 10; k++) {
@@ -203,16 +209,24 @@ export function computeAlternatives(i: AlternativesInput): { surfaces: SurfaceRe
 
   // ---- On Grid
   const kwpOn = recommendedKwp;
+  // Reparto de los paneles del sistema recomendado entre las superficies, en el orden de uso y sin superar su capacidad.
+  let leftModules = roundModules(kwpOn);
+  for (const x of surfaces.perSurface) {
+    const cap = x.maxKwp == null ? Infinity : Math.floor(x.maxKwp / moduleKw + 1e-9);
+    const n = Math.max(0, Math.min(leftModules, cap));
+    x.modules = n; x.usedKwp = r2(n * moduleKw); x.usedAreaM2 = Math.round(n * moduleKw * t.mountingM2PerKwp[x.type]);
+    leftModules -= n;
+  }
   const yOn = simulateYear(i, kwpOn, null);
   surfaces.coverageReachable = maxKwp != null && maxKwp < ideal ? r2(coverageOf(yOn)) : null;
-  const mountOn = mountingSplit(i, kwpOn, structuredClone(perSurface));
+  const mountOn = mountingSplit(i, kwpOn, structuredClone(surfaces.perSurface));
   const onWarnings = ['Un sistema On Grid convencional se apaga cuando se va la luz: no da respaldo durante apagones.'];
   if (!areaKnown) onWarnings.push(`${perSurface.some((x) => x.areaM2 != null) ? 'No conocemos toda el área disponible' : 'No conocemos el área disponible'}: se necesitan unos ${surfaces.requiredAreaM2} m² para la potencia ideal; lo confirmaremos en la visita.`);
   if (surfaces.additionalKwp > 0) onWarnings.push(`El espacio indicado limita la potencia: faltan unos ${surfaces.additionalKwp} kWp (unos ${surfaces.additionalAreaM2} m²) para la potencia ideal.`);
   const onGrid: Alternative = {
     key: 'onGrid', name: 'Energy On Grid', applicable: kwpOn > 0, reason: kwpOn > 0 ? undefined : 'El espacio indicado no alcanza ni para un módulo.',
     kwp: r2(kwpOn), modules: roundModules(kwpOn), inverterKw: roundInverter(kwpOn / t.dcAcRatio), battery: null,
-    areaM2: Math.round(m2For(kwpOn)), ...common(yOn), residualCharges: RESIDUAL(s, compensation), scenarios: finance('onGrid', kwpOn, 0, yOn, mountOn),
+    areaM2: surfaces.perSurface.length && leftModules === 0 ? sum(surfaces.perSurface.map((x) => x.usedAreaM2 ?? 0)) : Math.round(m2For(kwpOn)), ...common(yOn), residualCharges: RESIDUAL(s, compensation), scenarios: finance('onGrid', kwpOn, 0, yOn, mountOn),
     monthly: monthly(yOn), labels: [], warnings: onWarnings,
   };
 
@@ -235,7 +249,7 @@ export function computeAlternatives(i: AlternativesInput): { surfaces: SurfaceRe
   const cycling = Math.max(0, usable - backupEnergy / dischEff);
   const battery: Battery = { cyclingKwh: cycling, powerKw: Math.max(backupKw, usable / 2), roundTrip: t.batteryRoundTrip };
   const yHy = simulateYear(i, kwpOn, battery);
-  const mountHy = mountingSplit(i, kwpOn, structuredClone(perSurface));
+  const mountHy = mountingSplit(i, kwpOn, structuredClone(surfaces.perSurface));
   const hyCommon = common(yHy);
   const hyWarnings = [
     `Reserva de ${hours} h para las cargas ${scope === 'total' ? 'de todo el inmueble' : scope === 'parcial' ? 'principales' : 'esenciales'} con un consumo promedio de ${r1(backupAvgKw)} kW (picos de hasta ${r1(backupKw)} kW, que definen el inversor). Es preliminar: se confirma con el inventario de cargas y sus arranques.`,
@@ -283,10 +297,10 @@ export function computeAlternatives(i: AlternativesInput): { surfaces: SurfaceRe
   for (let k = 0; k < 20 && rel < t.offGridReliability; k++) { kwpOff *= 1.1; nomOff = Math.ceil((nomOff * 1.1) / 5) * 5; rel = simulateOff(kwpOff, nomOff); }
   kwpOff = roundModules(kwpOff) * moduleKw;
   if (maxKwp != null && kwpOff > maxKwp) {
-    const relMax = simulateOff(roundModules(maxKwp) * moduleKw, nomOff);
+    const relMax = simulateOff((maxModules ?? 0) * moduleKw, nomOff);
     offWarnings.push(`El espacio indicado no permite la potencia necesaria (${r1(kwpOff)} kWp): con ${r1(maxKwp)} kWp la energía suministrada sería cerca del ${(relMax * 100).toFixed(1)} %. Alternativas: más superficie, reducir cargas o un generador de respaldo.`);
     if (offApplicable) { offApplicable = relMax >= 0.95; if (!offApplicable) offReason = 'La superficie disponible no alcanza para un sistema aislado confiable.'; }
-    kwpOff = Math.min(kwpOff, roundModules(maxKwp) * moduleKw);
+    kwpOff = Math.min(kwpOff, (maxModules ?? 0) * moduleKw);
     rel = relMax;
   }
   if (rel < t.offGridReliability) offWarnings.push(`Confiabilidad estimada ${(rel * 100).toFixed(1)} %, por debajo del objetivo de ${(t.offGridReliability * 100).toFixed(1)} %.`);
@@ -295,7 +309,7 @@ export function computeAlternatives(i: AlternativesInput): { surfaces: SurfaceRe
   const genOff = sum(i.yieldPerKwp.map((y) => y * kwpOff));
   const offBefore = sum(yOn.before.map((b) => b.total));
   const yearOff = { saving: offBefore, before: offBefore, after: 0, generationKwh: genOff };
-  const mountOff = mountingSplit(i, kwpOff, structuredClone(perSurface));
+  const mountOff = mountingSplit(i, kwpOff, structuredClone(surfaces.perSurface));
   const offScen = Object.fromEntries((['conservador', 'base', 'optimista'] as const).map((sc) => [sc, evaluateInvestment({ p, scenario: sc, system: 'offGrid', kwp: kwpOff, batteryKwh: nomOff, mountingKwp: mountOff, year1: yearOff })])) as Record<ScenarioName, FinanceResult>;
   const servedYear = annual * rel;
   const offGrid: Alternative = {

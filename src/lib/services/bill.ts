@@ -93,6 +93,8 @@ export type BillData = {
   previousBalanceUsd: number | null;
   /** Clave de tarifa del pliego deducida de la categoría, tensión, demanda y franjas (null si no es clara). */
   tariffKey: string | null;
+  /** Categoría especial no transcrita en el motor (p. ej. bombeo de agua): el estudio usa el costo efectivo. */
+  specialTariff: string | null;
   uncertain: string[];
   tariffCategory: string | null;
   billingPeriod: string | null;      // AAAA-MM
@@ -149,11 +151,16 @@ export function mapTimeOfUse(items: { label: string; hours: string | null; kwh: 
   for (const x of clean) {
     const t = hrs(x);
     let k: PeriodKey | null = null;
+    // El horario manda sobre el nombre: «punta media 08-18» es la franja 08-18, no la punta.
     if (four) {
-      if (weekend(t) && (has(t, 18, 22) || /punta/.test(t))) k = 'sdf_18_22';
-      else if (has(t, 18, 22) || /punta/.test(t)) k = 'lv_18_22';
-      else if (has(t, 8, 18) || /media/.test(t)) k = 'lv_08_18';
-      else if (has(t, 22, 8) || /base/.test(t)) k = 'base';
+      if (weekend(t) && has(t, 18, 22)) k = 'sdf_18_22';
+      else if (has(t, 18, 22)) k = 'lv_18_22';
+      else if (has(t, 8, 18)) k = 'lv_08_18';
+      else if (has(t, 22, 8)) k = 'base';
+      else if (weekend(t) && /punta/.test(t)) k = 'sdf_18_22';
+      else if (/media/.test(t)) k = 'lv_08_18';
+      else if (/punta/.test(t)) k = 'lv_18_22';
+      else if (/base/.test(t)) k = 'base';
     } else {
       if (has(t, 8, 22)) k = 'h08_22';
       else if (has(t, 22, 8)) k = 'h22_08';
@@ -164,9 +171,19 @@ export function mapTimeOfUse(items: { label: string; hours: string | null; kwh: 
   return { scheme: four ? 'DIFERENCIADA_4' : 'HORARIA_2', kwh: out };
 }
 
+/**
+ * Categorías del pliego que el motor aún no tiene transcritas (pliego, «otros»): no se asimilan a otra tarifa; el estudio
+ * se hace con el costo efectivo de la planilla. Devuelve el nombre de la categoría o null si es una categoría soportada.
+ */
+export function specialCategory(category: string | null): string | null {
+  const c = normalize(category ?? '');
+  const m = c.match(/bombeo|entidad(es)? oficial|asistencia social|beneficio publico|culto|escenario(s)? deportivo|alumbrado publico|vehiculo(s)? electrico|autoconsumo|servicio(s)? comunitario/);
+  return m ? (category ?? '').trim().slice(0, 80) : null;
+}
+
 /** Clave de tarifa del pliego a partir de lo leído. Solo si la combinación existe para el segmento. */
 export function tariffKeyFromBill(segment: BillData['segment'], category: string | null, voltage: BillData['voltage'], hasDemand: boolean, scheme: 'HORARIA_2' | 'DIFERENCIADA_4' | null): string | null {
-  if (!segment) return null;
+  if (!segment || specialCategory(category)) return null;
   if (segment === 'residencial') return 'RES';
   const cat = normalize(category ?? '');
   const v = voltage ?? 'BV';
@@ -225,6 +242,7 @@ export function sanitizeExtraction(x: BillExtraction): BillData {
     timeOfUse, powerFactor: inRange(x.power_factor, 0.1, 1), charges,
     creditsKwh: inRange(x.energy_credits_kwh, 0, 10_000_000), previousBalanceUsd: inRange(x.previous_balance_usd, -5_000_000, 5_000_000),
     tariffKey: tariffKeyFromBill(segment, tariffCategory, voltage, demandKw != null || demandRegisteredKw != null, timeOfUse?.scheme ?? null),
+    specialTariff: specialCategory(tariffCategory),
     uncertain: (x.uncertain_fields ?? []).map((f) => clip(f, 40)).filter((f): f is string => !!f).slice(0, 20),
   };
 }
@@ -249,6 +267,12 @@ export type BillCalcInput = {
   /** Facturación real de referencia para el retorno: promedio de 12 meses facturados o una sola planilla. */
   billedUsd?: number | null;
   billedMonths?: number;
+  /** Tarifa especial (no transcrita): el estudio se calcula con el costo efectivo de esta planilla. */
+  specialTariff?: string | null;
+  /** Servicio eléctrico del mes y la parte que corresponde a energía (para el costo efectivo). */
+  serviceUsd?: number | null;
+  energyUsd?: number | null;
+  serviceKwh?: number | null;
   /** Avisos para el cliente antes de confirmar. */
   warnings: string[];
 };
@@ -284,6 +308,8 @@ export function toCalculatorInput(d: BillData, mode: CalcMode): BillCalcInput | 
     segment: d.segment, tariffKey: d.tariffKey, province: d.province, canton: d.canton,
     periodKwh: d.timeOfUse?.kwh ?? null, powerFactor: d.powerFactor,
     ...billedReference(d),
+    specialTariff: d.specialTariff, serviceUsd: d.electricityUsd, serviceKwh: d.energyKwh,
+    energyUsd: (() => { const e = d.charges.filter((c) => c.kind === 'energia').reduce((a, c) => a + c.usd, 0); return e > 0 ? Math.round(e * 100) / 100 : null; })(),
   };
   let out: BillCalcInput;
   if (mode === 'profesional' && full) {

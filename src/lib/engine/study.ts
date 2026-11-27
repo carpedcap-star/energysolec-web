@@ -4,7 +4,7 @@ import { systemLossFactor, type SolarResource, type SizingResult, round } from '
 import type { FinanceResult } from './finance';
 import type { Tariff } from './tariff';
 import { computeAlternatives, type Alternative, type AlternativeKey, type SurfaceResult } from './alternatives';
-import { computeBill, type BillLine, type BillOptions, type PeriodKey, type TariffStructure } from './tariff-v2';
+import { computeBill, SCHEME_PERIODS, type BillLine, type BillOptions, type PeriodKey, type TariffStructure } from './tariff-v2';
 import { loadShape, nightShare, DEFAULT_PEAK } from './energy';
 
 export const SURFACE_TYPES = ['techo_metalico', 'techo_inclinado', 'losa', 'terreno'] as const;
@@ -47,6 +47,10 @@ export const StudyInput = z.object({
   /** Facturación real de referencia (lo que paga hoy): promedio de 12 meses facturados o una sola planilla. */
   billedMonthlyUsd: z.number().positive().max(5_000_000).optional(),
   billedMonths: z.number().int().min(0).max(24).optional(),
+  /** Tarifa especial no transcrita (de la planilla) y su servicio eléctrico, para el estudio con costo efectivo. */
+  specialTariff: z.string().max(80).optional(),
+  serviceUsd: z.number().positive().max(5_000_000).optional(),
+  energyChargesUsd: z.number().positive().max(5_000_000).optional(),
 }).refine((v) => v.monthlyKwh || v.monthlyBillUsd || v.monthlyHistoryKwh, { message: 'Indica tu consumo en kWh o el valor de tu factura.' });
 export type StudyInput = z.infer<typeof StudyInput>;
 
@@ -139,7 +143,13 @@ export function runStudy(input: StudyInput, resource: SolarResource & { candidat
   const surfaces = input.surfaces ?? (input.availableAreaM2 ? [{ type: input.surface === 'terreno' ? 'terreno' as const : 'techo_metalico' as const, areaM2: input.availableAreaM2 }] : []);
   const backup = input.backup ?? (input.wantsBattery || input.objective === 'respaldo' || input.objective === 'almacenamiento' ? 'esencial' : 'ninguno');
   const peakHours = input.peakHours ?? (input.daytimeShare != null ? (input.daytimeShare >= 0.6 ? 'mediodia' : input.daytimeShare <= 0.3 ? 'noche' : 'tarde') : undefined);
-  const periodShares = input.periodKwh as Partial<Record<PeriodKey, number>> | undefined;
+  // Las franjas de la planilla solo se usan si corresponden al esquema de la tarifa aplicada; si no (p. ej. 3 franjas
+  // de la diferenciada con una tarifa horaria de 2), no se convierten por aproximación: se usa el perfil tipo y se advierte.
+  const rawShares = input.periodKwh as Partial<Record<PeriodKey, number>> | undefined;
+  const fits = !!rawShares && Object.keys(rawShares).length > 0 && Object.keys(rawShares).every((k) => SCHEME_PERIODS[s.scheme].includes(k as PeriodKey));
+  const periodShares = fits ? rawShares : undefined;
+  if (rawShares && !fits && s.scheme !== 'UNICO')
+    warnings.push(`Las franjas horarias de tu planilla (${Object.keys(rawShares).length}) no coinciden con las de la tarifa ${tariff.name}: repartimos tu consumo con un perfil tipo. Confirma tu categoría tarifaria con tu asesor.`);
 
   const alt = computeAlternatives({
     segment: input.segment, monthlyKwh: monthly, peakHours, periodShares, demandKw, yieldPerKwp,
@@ -203,7 +213,10 @@ export function runStudy(input: StudyInput, resource: SolarResource & { candidat
   const rec = alt.alternatives.find((a) => a.key === alt.recommended);
   if (rec?.summary && (rec.summary.paybackYears == null || rec.summary.paybackYears > p.financial.lifetimeYears))
     critical.push(`Con los precios y la tarifa actuales, la alternativa recomendada no recupera la inversión dentro de la vida útil de ${p.financial.lifetimeYears} años.`);
-  if (tariff.isPlaceholder) critical.push('Tarifa y resultados PROVISIONALES: pendientes de la revisión de Energy Solutions Ecuador.');
+  if (tariff.code === 'ESPECIAL') {
+    critical.push(`Tu tarifa (${input.specialTariff ?? 'especial'}) aún no está en nuestro motor tarifario: este es un estudio PRELIMINAR con el costo efectivo de tu planilla. No modela franjas horarias ni cambios en la demanda; un asesor lo confirmará con el pliego vigente.`);
+    if (!input.energyChargesUsd) critical.push('Tu planilla no desglosa el cargo de energía: usamos el valor completo del servicio por kWh, lo que puede sobrestimar el ahorro.');
+  } else if (tariff.isPlaceholder) critical.push('Tarifa y resultados PROVISIONALES: pendientes de la revisión de Energy Solutions Ecuador.');
   else if (p.isPlaceholder) critical.push('Precios PROVISIONALES: pendientes de validación por Energy Solutions Ecuador.');
   if (!resource.candidates?.length) critical.push('Usamos un rendimiento solar regional conservador: recalcularemos con datos de tu ubicación.');
   if (alt.surfaces.additionalKwp > 0) critical.push(`Tu espacio limita el sistema: cubrirías cerca del ${Math.round((alt.surfaces.coverageReachable ?? 0) * 100)} % de tu consumo.`);
@@ -211,7 +224,7 @@ export function runStudy(input: StudyInput, resource: SolarResource & { candidat
   const co2Year = (genYear * p.technical.gridCo2KgPerKwh) / 1000;
   const co2_25 = (on.scenarios.base.generationByYear.reduce((a, b) => a + b, 0) * p.technical.gridCo2KgPerKwh) / 1000;
   const avgMonth = Math.round(annual / 12);
-  const billLines = computeBill(s, { month, kwhByPeriod: s.scheme === 'UNICO' ? { unico: avgMonth } : Object.fromEntries(Object.entries(periodShares ?? {}).map(([k, v]) => [k, v])), demandKw, dmMax12Kw: demandKw, peakDemandKw: demandKw, powerFactor: input.powerFactor }, tariff.options).lines;
+  const billLines = s.scheme !== 'UNICO' ? [] : computeBill(s, { month, kwhByPeriod: { unico: avgMonth }, demandKw, dmMax12Kw: demandKw, peakDemandKw: demandKw, powerFactor: input.powerFactor }, tariff.options).lines;
 
   return {
     consumption: { monthlyKwh: monthly, estimatedFromBill, annualKwh: Math.round(annual) },

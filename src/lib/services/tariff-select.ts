@@ -70,3 +70,26 @@ export function selectTariff(o: {
     assumed: !valid && o.segment !== 'residencial',
   };
 }
+
+/**
+ * Tarifa especial que el motor no tiene transcrita (bombeo de agua, entidades oficiales…): estudio PRELIMINAR con el
+ * costo efectivo de la planilla. Energía = cargos de energía ÷ kWh (si la planilla los desglosa; si no, el servicio
+ * eléctrico completo ÷ kWh, y se advierte que puede sobrestimar el ahorro). El resto del servicio (demanda,
+ * comercialización, otros) queda como cargo fijo que la generación solar no reduce. Nunca se asigna otra categoría.
+ */
+export function effectiveCostTariff(o: { category: string; kwh: number; serviceUsd: number; energyUsd?: number | null; distributor?: string; province: string; city?: string; p: CalcParams }): SelectedTariff & { effective: { usdPerKwh: number; fixedUsd: number; fromBreakdown: boolean } } {
+  const fromBreakdown = !!(o.energyUsd && o.energyUsd > 0 && o.energyUsd <= o.serviceUsd);
+  const energy = fromBreakdown ? o.energyUsd! : o.serviceUsd;
+  const usdPerKwh = Math.round((energy / o.kwh) * 1e5) / 1e5;
+  const fixedUsd = Math.round((o.serviceUsd - energy) * 100) / 100;
+  const dist = matchDistributor(o.distributor) ?? suggestDistributor(o.province, o.city);
+  return {
+    code: 'ESPECIAL', name: `${o.category} (tarifa especial, costo efectivo de tu planilla)`,
+    sourceNote: `Costo efectivo leído de tu planilla: $${usdPerKwh.toFixed(4)} por kWh de energía${fixedUsd > 0 ? ` y $${fixedUsd.toFixed(2)} al mes de cargos que no dependen de la energía (demanda, comercialización, otros)` : ''}. La categoría no está transcrita en el motor tarifario.`,
+    isPlaceholder: true,
+    structure: { scheme: 'UNICO', commercialization: { usdPerMonth: fixedUsd }, energy: [{ period: 'unico', blocks: [{ fromKwh: 0, toKwh: null, usdPerKwh }] }] },
+    distributor: dist ? { code: dist.code, name: dist.name, suggested: !matchDistributor(o.distributor) } : null,
+    assumed: false,
+    effective: { usdPerKwh, fixedUsd, fromBreakdown },
+  };
+}

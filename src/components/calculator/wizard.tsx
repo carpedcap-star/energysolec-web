@@ -14,42 +14,46 @@ export type DistributorOpt = { code: string; name: string };
 export type CoverageOpt = { province: string; distributor: string; cantons?: Record<string, string> };
 export type TariffChoices = Record<Seg, { key: string; label: string }[]>;
 
-const STEPS = ['Tu consumo', 'Ubicación', 'Superficie'];
+/** Superficies que el cliente puede combinar; los factores de ocupación (m²/kWp) los define Gerencia en el panel. */
 const SURFACES = [
-  { id: 'techo', t: 'Techo', d: 'Metálico, teja o fibrocemento' },
-  { id: 'losa', t: 'Losa', d: 'Terraza plana de hormigón' },
-  { id: 'terreno', t: 'Terreno', d: 'Suelo libre junto a la propiedad' },
+  { id: 'techo_metalico', t: 'Cubierta o techo' },
+  { id: 'losa', t: 'Losa de hormigón' },
+  { id: 'terreno', t: 'Terreno o piso' },
 ] as const;
 type SurfaceId = (typeof SURFACES)[number]['id'];
-type SurfaceVal = { area: string; unknown: boolean; roof: 'techo_metalico' | 'techo_inclinado' };
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 const provinceName = (s?: string | null) => (s ? PROVINCES.find((p) => norm(p.name) === norm(s))?.name : undefined);
+const num = (x: unknown) => (x === '' || x == null || !Number.isFinite(Number(x)) ? undefined : Number(x));
 
-export function CalculatorWizard({ initialSegment, initialObjective, billUpload = false, distributors, coverage, tariffChoices }: {
+/**
+ * Calculadora en una sola pantalla: el cliente sube su planilla (la IA lee consumo, valor, distribuidora, tarifa,
+ * demanda, franjas y cargos), confirma la ubicación solo si no se pudo leer, indica superficies si las conoce y calcula.
+ */
+export function CalculatorWizard({ initialSegment, initialObjective, billUpload = false, distributors, coverage }: {
   initialSegment?: Seg; initialObjective?: string; billUpload?: boolean;
-  distributors: DistributorOpt[]; coverage: CoverageOpt[]; tariffChoices: TariffChoices;
+  distributors: DistributorOpt[]; coverage: CoverageOpt[]; tariffChoices?: TariffChoices;
 }) {
-  const [step, setStep] = useState(0);
   const [f, setF] = useState<Record<string, any>>({
-    segment: initialSegment ?? 'residencial', province: 'Guayas', city: '', address: '', distributor: '', tariffCode: '',
+    segment: initialSegment ?? 'residencial', province: '', city: '', distributor: '', tariffCode: '',
     input: 'bill', monthlyBillUsd: '', monthlyKwh: '', history: Array(12).fill(''), demandKw: '',
-    periodKwh: null, powerFactor: null, billedUsd: null, billedMonths: 0, lat: null, lng: null,
+    periodKwh: null, powerFactor: null, billedUsd: null, billedMonths: 0, specialTariff: null, serviceUsd: null, energyUsd: null, lat: null, lng: null,
   });
-  // Respaldo: solo si el visitante llegó buscando baterías; la autonomía híbrida es la predeterminada del administrador.
+  // Respaldo: solo si el visitante llegó buscando baterías; capacidad y autonomía las define Gerencia en el panel.
   const wantsBackup = initialObjective === 'respaldo' || initialObjective === 'almacenamiento';
-  const [surfaces, setSurfaces] = useState<Partial<Record<SurfaceId, SurfaceVal>>>({});
+  const [areas, setAreas] = useState<Partial<Record<SurfaceId, string>>>({});
+  const [manual, setManual] = useState(!billUpload);
+  const [editPlace, setEditPlace] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [geo, setGeo] = useState('');
   const human = useTurnstile(TURNSTILE_ACTIONS.study);
   const [pending, setPending] = useState<{ code: string; teaser: { kwp: number; modules: number; annualGeneration: number } } | null>(null);
   const [done, setDone] = useState<{ r: StudyResult; token: string } | null>(null);
-  // Planilla leída con IA: los datos propuestos llenan el formulario; el cliente debe revisarlos y confirmarlos.
   const [bill, setBill] = useState<BillResult | null>(null);
-  const [billOk, setBillOk] = useState(false);
   const set = (k: string, v: unknown) => setF((x) => ({ ...x, [k]: v }));
   const seg = f.segment as Seg;
+  const placeFromBill = !!bill && !!provinceName(bill.proposal.province) && !editPlace;
 
   const suggested = (() => {
     const c = coverage.find((x) => norm(x.province) === norm(f.province));
@@ -57,6 +61,7 @@ export function CalculatorWizard({ initialSegment, initialObjective, billUpload 
     const byCanton = f.city ? Object.entries(c.cantons ?? {}).find(([k]) => norm(k) === norm(f.city))?.[1] : undefined;
     return distributors.find((d) => d.code === (byCanton ?? c.distributor)) ?? null;
   })();
+  const distName = distributors.find((d) => d.code === f.distributor)?.name ?? suggested?.name ?? null;
 
   function locate() {
     if (!navigator.geolocation) return setGeo('Tu navegador no permite compartir la ubicación.');
@@ -65,7 +70,7 @@ export function CalculatorWizard({ initialSegment, initialObjective, billUpload 
       (p) => {
         const lat = +p.coords.latitude.toFixed(5), lng = +p.coords.longitude.toFixed(5);
         if (lat < -5.1 || lat > 1.7 || lng < -92.1 || lng > -75) { setGeo('Esa ubicación está fuera de Ecuador; usaremos la provincia.'); return; }
-        setF((x) => ({ ...x, lat, lng })); setGeo('');
+        setF((x) => ({ ...x, lat, lng })); setGeo('Ubicación exacta registrada.');
       },
       () => setGeo('No pudimos obtener tu ubicación; usaremos la capital de tu provincia.'),
       { enableHighAccuracy: true, timeout: 15_000 },
@@ -76,55 +81,53 @@ export function CalculatorWizard({ initialSegment, initialObjective, billUpload 
     const p = b.proposal;
     setF((x) => ({
       ...x, input: p.input, monthlyKwh: p.monthlyKwh, monthlyBillUsd: p.monthlyBillUsd,
-      history: p.input === 'history' ? p.history : x.history, demandKw: p.demandKw || x.demandKw,
-      segment: p.segment ?? x.segment, tariffCode: p.tariffKey ?? x.tariffCode, distributor: p.distributor || x.distributor,
+      history: p.input === 'history' ? p.history : x.history, demandKw: p.demandKw || '',
+      segment: p.segment ?? x.segment, tariffCode: p.tariffKey ?? '', distributor: p.distributor || '',
       province: provinceName(p.province) ?? x.province, city: p.canton ?? x.city, periodKwh: p.periodKwh ?? null, powerFactor: p.powerFactor ?? null,
       billedUsd: p.billedUsd ?? null, billedMonths: p.billedMonths ?? 0,
+      specialTariff: p.specialTariff ?? null, serviceUsd: p.serviceUsd ?? null, energyUsd: p.energyUsd ?? null,
     }));
-    setBill(b); setBillOk(false); setErr('');
+    setBill(b); setManual(false); setEditPlace(false); setErr('');
+  }
+  function discardBill() {
+    setBill(null); setErr('');
+    setF((x) => ({ ...x, periodKwh: null, powerFactor: null, billedUsd: null, billedMonths: 0, specialTariff: null, serviceUsd: null, energyUsd: null, tariffCode: '', demandKw: '' }));
   }
 
-  function validStep(): string {
-    if (step === 0) {
-      if (bill && !billOk) return 'Revisa los datos leídos de tu planilla y confirma que son correctos.';
-      if (f.input === 'history' && f.history.filter((h: string) => +h > 0).length < 12) return 'Indica tu consumo mensual promedio.';
-      if (f.input === 'bill' && !(+f.monthlyBillUsd > 0)) return 'Ingresa el valor de tu factura mensual.';
+  function problem(): string {
+    if (!bill && !manual) return billUpload ? 'Sube tu planilla eléctrica o ingresa tu consumo manualmente.' : 'Ingresa tu consumo mensual.';
+    if (!bill) {
       if (f.input === 'kwh' && !(+f.monthlyKwh > 0)) return 'Ingresa tu consumo mensual en kWh.';
+      if (f.input !== 'kwh' && !(+f.monthlyBillUsd > 0)) return 'Ingresa el valor de tu factura mensual.';
     }
-    if (step === 2) {
-      for (const s of SURFACES) {
-        const v = surfaces[s.id];
-        if (v && !v.unknown && !(+v.area > 0)) return `Indica los m² de «${s.t}» o marca «No conozco el área».`;
-      }
-    }
+    if (!f.province) return 'Selecciona la provincia donde se instalaría el sistema.';
+    for (const s of SURFACES) { const a = areas[s.id]; if (a != null && a !== '' && !(+a > 0)) return `Revisa los m² de «${s.t}» o déjalos vacíos si no los conoces.`; }
     return '';
   }
 
   async function calculate() {
-    const v = validStep(); if (v) return setErr(v);
+    const v = problem(); if (v) return setErr(v);
     setBusy(true); setErr('');
-    const num = (x: string) => (x === '' || x == null ? undefined : Number(x));
-    const list = SURFACES.filter((s) => surfaces[s.id]).map((s) => {
-      const v = surfaces[s.id]!;
-      return { type: s.id === 'techo' ? v.roof : s.id, areaM2: v.unknown ? null : Number(v.area) };
-    });
-    const known = list.every((s) => s.areaM2 != null) && list.length > 0 ? list.reduce((a, s) => a + (s.areaM2 ?? 0), 0) : undefined;
-    const objective = wantsBackup ? 'respaldo' : initialObjective === 'inversion' ? 'inversion' : 'reducir_factura';
-    const fromBill = !!(bill && billOk);
+    const surfaces = SURFACES.filter((s) => areas[s.id] != null).map((s) => ({ type: s.id, areaM2: num(areas[s.id]) ?? null }));
+    const known = surfaces.length > 0 && surfaces.every((s) => s.areaM2 != null) ? surfaces.reduce((a, s) => a + (s.areaM2 ?? 0), 0) : undefined;
+    const fromBill = !!bill;
     const body = {
-      mode: f.input === 'history' ? 'profesional' : 'rapida', segment: seg, objective, province: f.province, city: f.city, address: f.address,
-      lat: f.lat ?? undefined, lng: f.lng ?? undefined, distributor: f.distributor || undefined, tariffCode: f.tariffCode || undefined,
+      mode: f.input === 'history' ? 'profesional' : 'rapida', segment: seg, objective: wantsBackup ? 'respaldo' : 'reducir_factura', province: f.province, city: f.city || '',
+      lat: f.lat ?? undefined, lng: f.lng ?? undefined, distributor: f.distributor || undefined, tariffCode: fromBill ? f.tariffCode || undefined : undefined,
       monthlyBillUsd: num(f.monthlyBillUsd) || undefined,
       monthlyKwh: f.input === 'kwh' ? num(f.monthlyKwh) : undefined,
       monthlyHistoryKwh: f.input === 'history' ? f.history.map(Number) : undefined,
       demandKw: fromBill ? num(f.demandKw) ?? 0 : 0,
       periodKwh: fromBill && f.periodKwh ? f.periodKwh : undefined, powerFactor: fromBill && f.powerFactor ? f.powerFactor : undefined,
       billedMonthlyUsd: fromBill && f.billedUsd ? f.billedUsd : undefined, billedMonths: fromBill && f.billedUsd ? f.billedMonths : undefined,
-      surface: list.length && list.every((s) => s.type === 'terreno') ? 'terreno' : 'cubierta', surfaces: list.length ? list : undefined, availableAreaM2: known,
+      specialTariff: fromBill && f.specialTariff ? f.specialTariff : undefined, serviceUsd: fromBill && f.serviceUsd ? f.serviceUsd : undefined,
+      energyChargesUsd: fromBill && f.energyUsd ? f.energyUsd : undefined,
+      surface: surfaces.length && surfaces.every((s) => s.type === 'terreno') ? 'terreno' : 'cubierta', surfaces: surfaces.length ? surfaces : undefined, availableAreaM2: known,
       tilt: 10, shading: 'none', wantsBattery: wantsBackup, backup: wantsBackup ? 'esencial' : 'ninguno',
-      billUploadId: bill && billOk ? bill.uploadId : undefined,
+      // Al calcular, el cliente confirma los datos leídos de su planilla.
+      billUploadId: bill ? bill.uploadId : undefined,
     };
-    track('calculator_submit', { segment: seg, mode: body.mode });
+    track('calculator_submit', { segment: seg, mode: body.mode, bill: fromBill });
     const r = await fetch('/api/study', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
     setBusy(false);
     if (!r?.ok) return setErr((await r?.json().catch(() => null))?.error ?? 'No se pudo calcular. Inténtalo de nuevo.');
@@ -158,11 +161,11 @@ export function CalculatorWizard({ initialSegment, initialObjective, billUpload 
       <div className="card overflow-hidden">
         <div className="bg-brand-dark p-6 text-white sm:p-8">
           <p className="eyebrow !text-brand">Estudio {pending.code}</p>
-          <h2 className="font-display mt-3 text-2xl font-extrabold sm:text-3xl">Tu estudio energético personalizado está listo.</h2>
-          <p className="mt-2 text-white/70">Registra tus datos para ver las alternativas On Grid, híbrida y aislada, y recibir el informe por correo.</p>
+          <h2 className="font-display mt-3 text-2xl font-extrabold sm:text-3xl">Tu estudio de ahorro está listo.</h2>
+          <p className="mt-2 text-white/70">Registra tus datos para ver tu ahorro, la inversión y el retorno, y recibir el informe por correo.</p>
           <div className="mt-6 grid grid-cols-2 gap-3 text-sm">
-            <div className="rounded-xl bg-white/10 p-4"><p className="text-white/60">Sistema recomendado</p><p className="font-display text-2xl font-bold text-brand">{pending.teaser.kwp.toLocaleString('es-EC')} kWp</p></div>
-            <div className="rounded-xl bg-white/10 p-4 blur-[1px]"><p className="text-white/60">Ahorro, retorno, VAN y TIR</p><p className="font-display text-2xl font-bold">$ ••••</p></div>
+            <div className="rounded-xl bg-white/10 p-4"><p className="text-white/60">Potencia recomendada</p><p className="font-display text-2xl font-bold text-brand">{pending.teaser.kwp.toLocaleString('es-EC')} kWp</p></div>
+            <div className="rounded-xl bg-white/10 p-4 blur-[1px]"><p className="text-white/60">Ahorro y retorno</p><p className="font-display text-2xl font-bold">$ ••••</p></div>
           </div>
         </div>
         <form onSubmit={unlock} className="grid gap-4 p-6 sm:grid-cols-2 sm:p-8">
@@ -185,109 +188,92 @@ export function CalculatorWizard({ initialSegment, initialObjective, billUpload 
 
   return (
     <div className="mx-auto max-w-3xl">
-      <ol className="mb-8 grid grid-cols-3 gap-2" aria-label="Pasos">
-        {STEPS.map((s, i) => (
-          <li key={s} className="min-w-0 text-xs" aria-current={i === step ? 'step' : undefined}><div className={`h-1 rounded-full ${i <= step ? 'bg-brand' : 'bg-line'}`} /><p className={`mt-2 truncate ${i === step ? 'font-semibold' : 'text-muted'}`}>{i + 1}. {s}</p></li>
-        ))}
-      </ol>
-      <div className="card p-5 sm:p-8">
-        {step === 0 && (
-          <div className="grid gap-5 sm:grid-cols-2">
-            <Field label="Tipo de cliente" className="sm:col-span-2">
-              <Choice value={seg} onChange={(v) => { set('segment', v); set('tariffCode', ''); }} options={[['residencial', 'Residencial'], ['comercial', 'Comercial'], ['industrial', 'Industrial']]} />
-            </Field>
-            {billUpload && <div className="sm:col-span-2"><BillUpload mode="profesional" result={bill} onRead={applyBill} onDiscard={() => { setBill(null); setBillOk(false); setErr(''); set('periodKwh', null); set('powerFactor', null); }} /></div>}
-            <Field label={bill ? 'Consumo leído de tu planilla' : '¿Prefieres escribir tu consumo? ¿Qué dato tienes?'} className="sm:col-span-2">
-              <Choice value={f.input === 'history' ? 'history' : f.input} onChange={(v) => set('input', v)} options={[
-                ['bill', 'Valor de la factura (USD)'], ['kwh', 'Consumo mensual (kWh)'],
-                ...(f.input === 'history' ? [['history', '12 meses de mi planilla']] as [string, string][] : []),
-              ]} />
-            </Field>
-            {f.input === 'bill' && <Field label="Factura mensual promedio (USD) *" htmlFor="c-bill"><input id="c-bill" className="input" type="number" min={1} step="any" inputMode="decimal" value={f.monthlyBillUsd} onChange={(e) => set('monthlyBillUsd', e.target.value)} /></Field>}
-            {f.input === 'kwh' && <>
-              <Field label="Consumo mensual promedio (kWh) *" htmlFor="c-kwh"><input id="c-kwh" className="input" type="number" min={1} inputMode="numeric" value={f.monthlyKwh} onChange={(e) => set('monthlyKwh', e.target.value)} /></Field>
-              <Field label="Valor de la factura (USD, opcional)" htmlFor="c-usd"><input id="c-usd" className="input" type="number" min={1} step="any" inputMode="decimal" value={f.monthlyBillUsd} onChange={(e) => set('monthlyBillUsd', e.target.value)} /></Field>
-            </>}
-            {f.input === 'history' && (
-              <p className="text-sm text-muted sm:col-span-2">Usaremos los 12 meses de consumo de tu planilla ({Math.round(f.history.reduce((a: number, h: string) => a + (+h || 0), 0) / 12).toLocaleString('es-EC')} kWh al mes en promedio).</p>
-            )}
-            {bill && (
-              <label className="flex items-start gap-3 rounded-xl border border-line bg-surface p-4 text-sm sm:col-span-2">
-                <input type="checkbox" checked={billOk} onChange={(e) => { setBillOk(e.target.checked); setErr(''); }} className="mt-1" />
-                <span><b>Revisé los datos de consumo y son correctos.</b> El estudio se calculará con los valores de este formulario.</span>
-              </label>
-            )}
-          </div>
-        )}
-        {step === 1 && (
-          <div className="grid gap-5 sm:grid-cols-2">
-            <Field label="Provincia *" htmlFor="c-prov"><select id="c-prov" className="input" value={f.province} onChange={(e) => { set('province', e.target.value); set('distributor', ''); }}>{PROVINCES.map((p) => <option key={p.name}>{p.name}</option>)}</select></Field>
-            <Field label="Cantón o ciudad" htmlFor="c-city"><input id="c-city" className="input" value={f.city} onChange={(e) => set('city', e.target.value)} maxLength={80} autoComplete="address-level2" /></Field>
-            <Field label="Referencia (opcional)" htmlFor="c-addr" className="sm:col-span-2"><input id="c-addr" className="input" value={f.address} onChange={(e) => set('address', e.target.value)} maxLength={200} placeholder="Sector o referencia; no es necesaria para el cálculo" /></Field>
-            <div className="rounded-xl border border-line p-4 text-sm sm:col-span-2">
-              <p className="font-medium">Ubicación exacta del sitio (opcional)</p>
-              <p className="mt-1 text-muted">Si la compartes, consultamos la irradiación solar de ese punto. Solo la usamos para el cálculo; si no, usamos la capital de tu provincia.</p>
-              <div className="mt-3 flex flex-wrap items-center gap-3">
+      <div className="card space-y-8 p-5 sm:p-8">
+        <section aria-labelledby="c-bill-h">
+          <h2 id="c-bill-h" className="font-semibold">Tu planilla eléctrica</h2>
+          {billUpload && !manual && (
+            <div className="mt-3">
+              <BillUpload mode="profesional" result={bill} onRead={applyBill} onDiscard={discardBill} />
+              {!bill && <button type="button" className="mt-3 text-sm text-brand-accent underline" onClick={() => setManual(true)}>¿No tienes tu planilla a mano? Ingresa tu consumo</button>}
+            </div>
+          )}
+          {manual && !bill && (
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <Field label="Tipo de cliente" className="sm:col-span-2">
+                <Choice value={seg} onChange={(v) => set('segment', v)} options={[['residencial', 'Residencial'], ['comercial', 'Comercial'], ['industrial', 'Industrial']]} />
+              </Field>
+              <Field label="¿Qué dato tienes?" className="sm:col-span-2">
+                <Choice value={f.input === 'kwh' ? 'kwh' : 'bill'} onChange={(v) => set('input', v)} options={[['bill', 'Valor de la factura (USD)'], ['kwh', 'Consumo mensual (kWh)']]} />
+              </Field>
+              {f.input === 'kwh' ? <>
+                <Field label="Consumo mensual promedio (kWh) *" htmlFor="c-kwh"><input id="c-kwh" className="input" type="number" min={1} inputMode="numeric" value={f.monthlyKwh} onChange={(e) => set('monthlyKwh', e.target.value)} /></Field>
+                <Field label="Valor de la factura (USD, opcional)" htmlFor="c-usd"><input id="c-usd" className="input" type="number" min={1} step="any" inputMode="decimal" value={f.monthlyBillUsd} onChange={(e) => set('monthlyBillUsd', e.target.value)} /></Field>
+              </> : <Field label="Factura mensual promedio (USD) *" htmlFor="c-bill"><input id="c-bill" className="input" type="number" min={1} step="any" inputMode="decimal" value={f.monthlyBillUsd} onChange={(e) => set('monthlyBillUsd', e.target.value)} /></Field>}
+              {billUpload && <button type="button" className="text-left text-sm text-brand-accent underline sm:col-span-2" onClick={() => { setManual(false); set('input', 'bill'); }}>Prefiero subir mi planilla</button>}
+            </div>
+          )}
+        </section>
+
+        <section aria-labelledby="c-place-h">
+          <h2 id="c-place-h" className="font-semibold">Ubicación</h2>
+          {placeFromBill ? (
+            <p className="mt-2 text-sm">
+              {[f.city, f.province].filter(Boolean).join(', ')}{distName ? ` · ${distName}` : ''} <span className="text-muted">(de tu planilla)</span>{' '}
+              <button type="button" className="text-brand-accent underline" onClick={() => setEditPlace(true)}>Cambiar</button>
+            </p>
+          ) : (
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <Field label="Provincia *" htmlFor="c-prov">
+                <select id="c-prov" className="input" value={f.province} onChange={(e) => { set('province', e.target.value); set('distributor', ''); }}>
+                  <option value="">Selecciona tu provincia</option>
+                  {PROVINCES.map((p) => <option key={p.name}>{p.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Cantón o ciudad" htmlFor="c-city"><input id="c-city" className="input" value={f.city} onChange={(e) => set('city', e.target.value)} maxLength={80} autoComplete="address-level2" /></Field>
+              <div className="flex flex-wrap items-center gap-3 text-sm sm:col-span-2">
                 <button type="button" onClick={locate} className="btn-ghost !py-2">Usar mi ubicación actual</button>
-                {f.lat != null && <>
-                  <span className="tabular-nums">{f.lat}, {f.lng}</span>
-                  <a className="text-brand-accent underline" href={`https://www.openstreetmap.org/?mlat=${f.lat}&mlon=${f.lng}#map=17/${f.lat}/${f.lng}`} target="_blank" rel="noopener noreferrer">Ver en el mapa</a>
-                  <button type="button" className="text-muted underline" onClick={() => setF((x) => ({ ...x, lat: null, lng: null }))}>Quitar</button>
-                </>}
+                <span className="text-muted" role="status">{geo || 'Opcional: mejora la precisión de la radiación solar.'}</span>
               </div>
-              {geo && <p className="mt-2 text-muted" role="status">{geo}</p>}
+              {f.province && (
+                <Field label="Empresa distribuidora" htmlFor="c-dist" className="sm:col-span-2">
+                  <select id="c-dist" className="input" value={f.distributor} onChange={(e) => set('distributor', e.target.value)}>
+                    <option value="">{suggested ? `Según mi ubicación: ${suggested.name}` : 'No lo sé'}</option>
+                    {distributors.map((d) => <option key={d.code} value={d.code}>{d.name}</option>)}
+                  </select>
+                </Field>
+              )}
             </div>
-            <Field label="Empresa distribuidora" htmlFor="c-dist" className="sm:col-span-2">
-              <select id="c-dist" className="input" value={f.distributor} onChange={(e) => set('distributor', e.target.value)}>
-                <option value="">{suggested ? `Según mi ubicación: ${suggested.name}` : 'No lo sé'}</option>
-                {distributors.map((d) => <option key={d.code} value={d.code}>{d.name}</option>)}
-              </select>
-              <p className="mt-1 text-xs text-muted">{f.distributor ? 'Tomada de tu planilla o elegida por ti.' : 'Sugerida por la provincia y el cantón: confírmala con tu planilla.'}</p>
-            </Field>
-          </div>
-        )}
-        {step === 2 && (
-          <div className="space-y-5">
-            <div>
-              <p className="label">¿Dónde se podrían instalar los paneles? <span className="font-normal text-muted">(elige una o varias)</span></p>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {SURFACES.map((s) => {
-                  const v = surfaces[s.id];
-                  return (
-                    <div key={s.id} className={`rounded-xl border p-4 text-sm ${v ? 'border-brand-dark bg-surface' : 'border-line'}`}>
-                      <label className="flex cursor-pointer items-start gap-3">
-                        <input type="checkbox" className="mt-1" checked={!!v} onChange={(e) => setSurfaces((x) => { const n = { ...x }; if (e.target.checked) n[s.id] = { area: '', unknown: false, roof: 'techo_metalico' }; else delete n[s.id]; return n; })} />
-                        <span><span className="font-medium">{s.t}</span><span className="block text-xs text-muted">{s.d}</span></span>
-                      </label>
-                      {v && (
-                        <div className="mt-3 grid gap-2">
-                          {s.id === 'techo' && (
-                            <><label className="text-xs text-muted" htmlFor="a-roof">Tipo de techo</label>
-                            <select id="a-roof" className="input" value={v.roof} onChange={(e) => setSurfaces((x) => ({ ...x, techo: { ...v, roof: e.target.value as SurfaceVal['roof'] } }))}>
-                              <option value="techo_metalico">Metálico (galvalume, steel panel)</option><option value="techo_inclinado">Teja o fibrocemento</option>
-                            </select></>
-                          )}
-                          <label className="text-xs text-muted" htmlFor={`a-${s.id}`}>Área aproximada (m²)</label>
-                          <input id={`a-${s.id}`} className="input" type="number" min={1} inputMode="decimal" disabled={v.unknown} value={v.area}
-                            onChange={(e) => setSurfaces((x) => ({ ...x, [s.id]: { ...v, area: e.target.value } }))} />
-                          <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={v.unknown} onChange={(e) => setSurfaces((x) => ({ ...x, [s.id]: { ...v, area: '', unknown: e.target.checked } }))} /> No conozco el área</label>
-                        </div>
-                      )}
+          )}
+        </section>
+
+        <section aria-labelledby="c-surf-h">
+          <h2 id="c-surf-h" className="font-semibold">Superficie disponible <span className="font-normal text-muted">(opcional)</span></h2>
+          <p className="mt-1 text-sm text-muted">Marca dónde podrían ir los paneles; puedes combinar varias. Si no sabes los m², déjalos vacíos.</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            {SURFACES.map((s) => {
+              const on = areas[s.id] != null;
+              return (
+                <div key={s.id} className={`rounded-xl border p-4 text-sm ${on ? 'border-brand-dark bg-surface' : 'border-line'}`}>
+                  <label className="flex cursor-pointer items-center gap-3">
+                    <input type="checkbox" checked={on} onChange={(e) => setAreas((x) => { const n = { ...x }; if (e.target.checked) n[s.id] = ''; else delete n[s.id]; return n; })} />
+                    <span className="font-medium">{s.t}</span>
+                  </label>
+                  {on && (
+                    <div className="mt-3">
+                      <label className="text-xs text-muted" htmlFor={`a-${s.id}`}>m² disponibles</label>
+                      <input id={`a-${s.id}`} className="input mt-1" type="number" min={1} inputMode="decimal" placeholder="No lo sé" value={areas[s.id]} onChange={(e) => setAreas((x) => ({ ...x, [s.id]: e.target.value }))} />
                     </div>
-                  );
-                })}
-              </div>
-              <p className="mt-2 text-xs text-muted">Si aún no lo sabes, continúa: calcularemos el área que necesitarías.</p>
-            </div>
-            <p className="rounded-xl bg-surface p-4 text-sm text-muted">¿Tienes fotos del lugar? Envíalas por WhatsApp a tu asesor desde la página de resultados: nos ayudan a confirmar el espacio y las sombras.</p>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        )}
-        {err && <p className="mt-5 text-sm text-red-600" role="alert">{err}</p>}
-        <div className="mt-8 flex justify-between gap-3">
-          <button type="button" className="btn-ghost" onClick={() => { setErr(''); setStep(step - 1); }} disabled={step === 0}>Atrás</button>
-          {step < STEPS.length - 1
-            ? <button type="button" className="btn-dark" onClick={() => { const v = validStep(); if (v) return setErr(v); setErr(''); setStep(step + 1); window.scrollTo({ top: 0 }); }}>Continuar</button>
-            : <button type="button" className="btn-primary" onClick={calculate} disabled={busy}>{busy ? 'Consultando irradiación y calculando…' : 'Calcular mi estudio'}</button>}
+        </section>
+
+        <div>
+          {err && <p className="mb-3 text-sm text-red-600" role="alert">{err}</p>}
+          <button type="button" className="btn-primary w-full sm:w-auto" onClick={calculate} disabled={busy}>{busy ? 'Calculando tu ahorro…' : 'Calcular mi ahorro'}</button>
+          {bill && <p className="mt-2 text-xs text-muted">Al calcular confirmas que los datos leídos de tu planilla son correctos. ¿Fotos del lugar? Envíalas luego por WhatsApp a tu asesor.</p>}
         </div>
       </div>
     </div>

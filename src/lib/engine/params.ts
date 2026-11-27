@@ -32,6 +32,8 @@ export const TechnicalParams = z.object({
   mountingM2PerKwp: z.object({ techo_metalico: z.number().positive(), techo_inclinado: z.number().positive(), losa: z.number().positive(), terreno: z.number().positive() })
     .default({ techo_metalico: 6, techo_inclinado: 6, losa: 12, terreno: 12 }),
   // Almacenamiento. La reserva mínima de SOC y la profundidad de descarga NO se suman: se usa la más restrictiva.
+  /** Usar el terreno solo después de cubiertas y losas (criterio de Gerencia). */
+  groundLast: z.boolean().default(true),
   socMinReserve: z.number().min(0).max(0.5).default(0.1),
   hybridBackupHours: z.number().min(1).max(72).default(8),
   offGridAutonomyHours: z.number().min(12).max(168).default(48),
@@ -133,6 +135,7 @@ export const DEFAULT_PARAMS: CalcParams = {
     gridCo2KgPerKwh: 0.3,          // PROVISIONAL: reemplazar con el factor oficial vigente del SNI (MAATE/CENACE)
     fallbackYield: { costa: 1150, sierra: 1250, amazonia: 1050, insular: 1400 },
     mountingM2PerKwp: { techo_metalico: 6, techo_inclinado: 6, losa: 12, terreno: 12 },
+    groundLast: true,
     socMinReserve: 0.1,
     hybridBackupHours: 8,
     offGridAutonomyHours: 48,
