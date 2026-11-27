@@ -18,7 +18,7 @@ export function ParamsForm({ values, tiers, validated, tariffsReviewed, canValid
   return (
     // Envío manual: con <form action>, React reinicia los campos al terminar y se perdería lo escrito ante un error.
     <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); startTransition(() => action(fd)); }} className="mt-6 space-y-6" noValidate>
-      <Section title="Precio llave en mano por tipo de sistema" intro="USD sin IVA por tramo de tamaño. Cada tramo aplica hasta el valor indicado; el último cubre cualquier tamaño mayor. Los precios de los sistemas híbrido y aislado no incluyen las baterías.">
+      <Section title="Precio final de venta por tipo de sistema" intro="USD sin IVA por tramo de tamaño; incluye equipos, instalación, ingeniería y margen (el IVA se suma una sola vez al final). Cada tramo aplica hasta el valor indicado; el último cubre cualquier tamaño mayor. Los precios de los sistemas híbrido y aislado no incluyen las baterías.">
         <div className="space-y-8">
           {TIER_TABLES.map((t) => <TierEditor key={t.id} table={t} initial={tiers[t.id]} />)}
         </div>

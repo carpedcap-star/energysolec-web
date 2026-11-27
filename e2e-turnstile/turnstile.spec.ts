@@ -48,7 +48,7 @@ test.describe('Turnstile con las claves de prueba de Cloudflare', () => {
   test('calculadora: el estudio se entrega con token', async ({ page }) => {
     await page.goto('/calculadora');
     await page.getByLabel('Factura mensual promedio (USD) *').fill('85');
-    for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Continuar' }).click();
+    for (let i = 0; i < 2; i++) await page.getByRole('button', { name: 'Continuar' }).click();
     await page.getByRole('button', { name: 'Calcular mi estudio' }).click();
     await expect(page.getByText('Tu estudio energético personalizado está listo.')).toBeVisible({ timeout: 60_000 });
     await page.getByLabel('Nombre *').fill('Cliente Turnstile');

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { BillExtraction, canConfirmBill, checkBillFile, isBillUploadId, mapTimeOfUse, matchDistributor, sanitizeExtraction, segmentFrom, tariffKeyFromBill, toCalculatorInput, voltageFrom, BILL_LIMITS } from './bill';
+import { BillExtraction, billedReference, canConfirmBill, checkBillFile, isBillUploadId, mapTimeOfUse, matchDistributor, sanitizeExtraction, segmentFrom, tariffKeyFromBill, toCalculatorInput, voltageFrom, BILL_LIMITS } from './bill';
 
 const empty: BillExtraction = { readable: true, distributor: null, tariff_category: null, billing_period: null, energy_kwh: null, electricity_usd: null, total_usd: null, demand_kw: null, history: [], notes: null, customer_type: null, voltage_level: null, province: null, canton: null, demand_registered_kw: null, demand_history: [], time_of_use: [], power_factor: null, charges: [], energy_credits_kwh: null, previous_balance_usd: null, uncertain_fields: [] };
-const months = (from: string, n: number, kwh: (i: number) => number) => Array.from({ length: n }, (_, i) => {
+const months = (from: string, n: number, kwh: (i: number) => number, usd: (i: number) => number | null = () => null) => Array.from({ length: n }, (_, i) => {
   const [y, m] = from.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + i, 1));
-  return { month: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`, kwh: kwh(i) };
+  return { month: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`, kwh: kwh(i), usd: usd(i) };
 });
 
 describe('checkBillFile', () => {
@@ -39,7 +39,7 @@ describe('matchDistributor', () => {
 describe('sanitizeExtraction', () => {
   it('descarta valores fuera de rango y meses mal formados; ordena y quita repetidos', () => {
     const d = sanitizeExtraction({ ...empty, energy_kwh: -5, total_usd: 1e12, demand_kw: Number.NaN, billing_period: 'sept 2026',
-      history: [{ month: '2026-05', kwh: 300 }, { month: '2026-13', kwh: 1 }, { month: '2026-03', kwh: 280 }, { month: '2026-05', kwh: 999 }, { month: '2026-04', kwh: -1 }] });
+      history: [{ month: '2026-05', kwh: 300, usd: null }, { month: '2026-13', kwh: 1, usd: null }, { month: '2026-03', kwh: 280, usd: null }, { month: '2026-05', kwh: 999, usd: null }, { month: '2026-04', kwh: -1, usd: null }] });
     expect(d.energyKwh).toBeNull(); expect(d.totalUsd).toBeNull(); expect(d.demandKw).toBeNull(); expect(d.billingPeriod).toBeNull();
     expect(d.history).toEqual([{ month: '2026-03', kwh: 280 }, { month: '2026-05', kwh: 300 }]);
   });
@@ -166,5 +166,15 @@ describe('comprobación determinista con el pliego', () => {
   it('sin franjas en una tarifa horaria no compara', () => {
     const d = sanitizeExtraction({ ...empty, distributor: 'EEQ', customer_type: 'Industrial', voltage_level: 'MT', tariff_category: 'Industrial con demanda horaria', energy_kwh: 30000, electricity_usd: 4000, demand_kw: 100 });
     expect(checkBill(d, DEFAULT_PARAMS)).toBeNull();
+  });
+});
+
+describe('facturación de referencia para el retorno', () => {
+  it('promedio de 12 meses facturados; si no, el valor de la planilla', () => {
+    const d12 = sanitizeExtraction({ ...empty, history: months('2025-11', 12, () => 300, (i) => 40 + i), total_usd: 51 });
+    expect(billedReference(d12)).toEqual({ billedUsd: 45.5, billedMonths: 12 });
+    const d1 = sanitizeExtraction({ ...empty, history: months('2026-05', 6, () => 300, () => 40), total_usd: 51, electricity_usd: 44 });
+    expect(billedReference(d1)).toEqual({ billedUsd: 51, billedMonths: 1 });
+    expect(billedReference(sanitizeExtraction({ ...empty }))).toEqual({ billedUsd: null, billedMonths: 0 });
   });
 });

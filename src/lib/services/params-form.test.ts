@@ -51,7 +51,7 @@ describe('parámetros: coherencia', () => {
     expect(err(fdFrom(DEF, { 'financial.inverterReplacementYear': '30' }))).toMatch(/entre el año 1 y la vida útil/);
   });
   it('números, enteros y rangos del motor', () => {
-    expect(err(fdFrom(DEF, { 'pricing.engineeringShare': 'abc' }))).toMatch(/«Ingeniería y permisos»: ingresa un número/);
+    expect(err(fdFrom(DEF, { 'pricing.engineeringShare': 'abc' }))).toMatch(/«Ingeniería y permisos adicionales»: ingresa un número/);
     expect(err(fdFrom(DEF, { 'financial.lifetimeYears': '25.5' }))).toMatch(/entero/);
     expect(err(fdFrom(DEF, { 'technical.dcAcRatio': '3' }))).toMatch(/«Relación CC\/CA»: valor fuera del rango/);
   });

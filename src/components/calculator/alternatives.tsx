@@ -1,89 +1,78 @@
 import type { StudyResult } from '@/lib/engine/study';
-import { fmtKwh, fmtKwp, fmtNum, fmtPct, fmtUsd, fmtYears } from '@/lib/format';
+import type { Alternative, AlternativeSummary } from '@/lib/engine/alternatives';
+import { fmtKwp, fmtNum, fmtUsd, fmtYears } from '@/lib/format';
 
-const SURFACE_LABEL: Record<string, string> = { techo_metalico: 'Techo de metal', techo_inclinado: 'Techo inclinado', losa: 'Losa', terreno: 'Terreno' };
+/** Resumen comercial de una alternativa; los estudios anteriores (sin `summary`) se resumen con la factura del motor. */
+export function summaryOf(a: Alternative): AlternativeSummary {
+  if (a.summary) return a.summary;
+  const cur = a.billBeforeYear / 12, res = a.key === 'offGrid' ? 0 : a.billAfterYear / 12, inv = a.scenarios.base.capex.total;
+  const sav = Math.max(0, cur - res);
+  return { currentMonthlyUsd: cur, residualMonthlyUsd: res, savingMonthlyUsd: sav, savingYearUsd: sav * 12, investmentUsd: inv, paybackYears: sav > 0 ? inv / (sav * 12) : null };
+}
 
-/** Comparación de las tres alternativas (On Grid, híbrida y aislada) y del espacio disponible. Escenario base. */
+const SOURCE: Record<string, string> = {
+  planillas_12: 'promedio de tus últimas 12 planillas', planilla: 'tu planilla (referencia preliminar)', declarada: 'el valor que indicaste', estimada: 'estimado con la tarifa oficial',
+};
+
+/** Lo que el cliente necesita ver: hoy, con solar, ahorro, inversión y retorno; luego las tres alternativas. */
 export function AlternativesComparison({ r }: { r: StudyResult }) {
   const alts = r.alternatives ?? [];
-  const s = r.surfaces;
   if (!alts.length) return null;
+  const rec = alts.find((a) => a.key === r.recommended && a.applicable) ?? alts.find((a) => a.applicable);
+  const s = rec ? summaryOf(rec) : null;
   return (
-    <section className="space-y-4" aria-labelledby="alt-h">
-      <div>
-        <h3 id="alt-h" className="font-display text-2xl font-extrabold">Compara tus alternativas</h3>
-        <p className="mt-1 text-sm text-muted">Dimensionamiento preliminar con el escenario base. La propuesta final se confirma con la visita técnica.</p>
-      </div>
+    <section className="space-y-5" aria-labelledby="alt-h">
+      {rec && s && (
+        <div className="card overflow-hidden">
+          <div className="bg-brand-dark p-5 text-white sm:p-6">
+            <p className="text-sm text-white/70">Con {rec.name} ({fmtKwp(rec.kwp)})</p>
+            <div className="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-5">
+              <Big l="Hoy pagas al mes" v={fmtUsd(s.currentMonthlyUsd)} />
+              <Big l="Con energía solar pagarías" v={rec.key === 'offGrid' ? 'Sin planilla' : fmtUsd(s.residualMonthlyUsd)} />
+              <Big l="Ahorras al mes" v={fmtUsd(s.savingMonthlyUsd)} accent />
+              <Big l="Inviertes (IVA incl.)" v={fmtUsd(s.investmentUsd)} />
+              <Big l="Recuperas tu inversión en" v={fmtYears(s.paybackYears)} accent />
+            </div>
+          </div>
+          <p className="px-5 py-3 text-xs text-muted sm:px-6">Lo que pagas hoy: {SOURCE[r.billing?.source ?? 'estimada']}. Retorno simple = inversión ÷ ahorro anual ({fmtUsd(s.savingYearUsd)}), sin descontar mantenimiento.</p>
+        </div>
+      )}
+      <h3 id="alt-h" className="font-display text-2xl font-extrabold">Compara tus alternativas</h3>
       <div className="grid gap-4 lg:grid-cols-3">
         {alts.map((a) => {
-          const f = a.scenarios.base;
-          const rec = r.recommended === a.key;
+          const x = summaryOf(a);
+          const isRec = r.recommended === a.key;
           return (
-            <article key={a.key} className={`card flex min-w-0 flex-col p-5 ${rec ? 'ring-2 ring-brand' : ''} ${a.applicable ? '' : 'opacity-80'}`}>
+            <article key={a.key} className={`card flex min-w-0 flex-col p-5 ${isRec ? 'ring-2 ring-brand' : ''} ${a.applicable ? '' : 'opacity-80'}`}>
               <div className="flex flex-wrap items-center gap-2">
                 <h4 className="font-semibold [overflow-wrap:anywhere]">{a.name}</h4>
-                {rec && <span className="rounded-full bg-brand px-2 py-0.5 text-xs font-semibold text-brand-dark">Recomendada</span>}
+                {isRec && <span className="rounded-full bg-brand px-2 py-0.5 text-xs font-semibold text-brand-dark">Recomendada</span>}
               </div>
-              {a.labels.length > 0 && <p className="mt-1 text-xs font-medium text-brand-accent">{a.labels.join(' · ')}</p>}
-              {!a.applicable ? (
-                <p className="mt-3 text-sm text-muted">{a.reason ?? 'No aplica para tu caso.'}</p>
-              ) : (
-                <>
-                  <dl className="mt-4 grid gap-2 text-sm">
-                    <Row k="Potencia" v={`${fmtKwp(a.kwp)} · ${a.modules} módulos`} />
-                    <Row k="Inversor" v={`${fmtNum(a.inverterKw)} kW`} />
-                    {a.battery && <Row k="Baterías" v={`${fmtNum(a.battery.nominalKwh)} kWh (${fmtNum(a.battery.usableKwh)} útiles)`} />}
-                    {a.battery?.backupHours != null && <Row k="Respaldo estimado" v={`${fmtNum(a.battery.backupHours, 0)} h${a.battery.backupKw ? ` a ${fmtNum(a.battery.backupKw)} kW` : ''}`} />}
-                    <Row k="Área requerida" v={`${fmtNum(a.areaM2, 0)} m²`} />
-                    <Row k="Generación año 1" v={fmtKwh(a.annualGenerationKwh)} />
-                    <Row k="Cobertura del consumo" v={fmtPct(a.coverage)} />
-                    <Row k="Inversión (IVA incl.)" v={fmtUsd(f.capex.total)} strong />
-                    {a.key === 'offGrid' ? <>
-                      {a.reliability != null && <Row k="Suministro simulado" v={fmtPct(a.reliability)} />}
-                      {a.costOfEnergyUsdPerKwh != null && <Row k="Costo de tu energía" v={`$${a.costOfEnergyUsdPerKwh.toFixed(3)}/kWh`} />}
-                      <Row k="Planilla actual evitada" v={`${fmtUsd(a.billBeforeYear)}/año`} />
-                    </> : <>
-                      <Row k="Ahorro año 1" v={fmtUsd(a.savingYear1)} strong />
-                      <Row k="Planilla anual" v={`${fmtUsd(a.billBeforeYear)} → ${fmtUsd(a.billAfterYear)}`} />
-                    </>}
-                    <Row k="Retorno simple" v={fmtYears(f.simplePayback)} />
-                    <Row k="VAN" v={fmtUsd(f.npv)} />
-                    <Row k="TIR" v={f.irr == null ? 'n/d' : fmtPct(f.irr)} />
-                  </dl>
-                  {a.batteryEconomicBenefitYear1 != null && a.batteryEconomicBenefitYear1 > 0 && (
-                    <p className="mt-3 text-xs text-muted">De ese ahorro, {fmtUsd(a.batteryEconomicBenefitYear1)} al año se deben a las baterías; el resto del valor de las baterías es el respaldo ante apagones.</p>
-                  )}
-                  {a.residualCharges.length > 0 && <p className="mt-3 text-xs text-muted">Sigues pagando: {a.residualCharges.join(', ')}.</p>}
-                </>
+              {!a.applicable ? <p className="mt-3 text-sm text-muted">{a.reason ?? 'No aplica para tu caso.'}</p> : (
+                <dl className="mt-4 grid gap-2 text-sm">
+                  <Row k="Potencia" v={fmtKwp(a.kwp)} />
+                  <Row k="Paneles" v={String(a.modules)} />
+                  {a.battery && <Row k="Baterías" v={`${fmtNum(a.battery.nominalKwh, 0)} kWh · ${fmtNum(a.battery.backupHours ?? 0, 0)} h de respaldo`} />}
+                  <Row k="Superficie" v={`${fmtNum(a.areaM2, 0)} m²`} />
+                  <Row k="Inversión (IVA incl.)" v={fmtUsd(x.investmentUsd)} strong />
+                  <Row k="Ahorro mensual" v={fmtUsd(x.savingMonthlyUsd)} strong />
+                  <Row k="Ahorro anual" v={fmtUsd(x.savingYearUsd)} />
+                  <Row k="Factura residual" v={a.key === 'offGrid' ? 'Sin planilla eléctrica' : `${fmtUsd(x.residualMonthlyUsd)}/mes`} />
+                  <Row k="Retorno simple" v={fmtYears(x.paybackYears)} strong />
+                </dl>
               )}
-              {a.warnings.length > 0 && <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-amber-900">{a.warnings.map((w) => <li key={w}>{w}</li>)}</ul>}
             </article>
           );
         })}
       </div>
-      {s && (
-        <div className="card p-5 text-sm">
-          <p className="font-semibold">Tu espacio disponible</p>
-          <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2">
-            <Row k="Potencia ideal para tu consumo" v={fmtKwp(s.idealKwp)} />
-            <Row k="Potencia recomendada" v={fmtKwp(s.recommendedKwp)} />
-            <Row k="Área que necesitarías" v={`${fmtNum(s.requiredAreaM2, 0)} m²`} />
-            <Row k="Máximo instalable en tu espacio" v={s.maxKwp == null ? 'Sin dato de área' : fmtKwp(s.maxKwp)} />
-            {s.coverageReachable != null && <Row k="Cobertura alcanzable" v={fmtPct(s.coverageReachable)} />}
-          </dl>
-          {s.perSurface.length > 0 && (
-            <ul className="mt-3 space-y-1 text-muted">{s.perSurface.map((p) => (
-              <li key={p.type}>{SURFACE_LABEL[p.type] ?? p.type}: {p.areaM2 == null ? 'área por confirmar' : `${fmtNum(p.areaM2, 0)} m² (hasta ${fmtKwp(p.maxKwp ?? 0)})`}{p.usedKwp > 0 ? ` · se usan ${fmtKwp(p.usedKwp)}` : ''}</li>
-            ))}</ul>
-          )}
-          {s.additionalKwp > 0 && <p className="mt-3 text-amber-900">Para cubrir tu consumo ideal faltarían {fmtKwp(s.additionalKwp)} (unos {fmtNum(s.additionalAreaM2, 0)} m² más).</p>}
-          {!s.areaKnown && <p className="mt-3 text-muted">No indicaste el área: confirmaremos el espacio en la visita técnica.</p>}
-        </div>
-      )}
+      <p className="text-xs text-muted">VAN, TIR, flujo de caja, escenarios y supuestos técnicos están en el informe PDF.</p>
     </section>
   );
 }
 
+const Big = ({ l, v, accent }: { l: string; v: string; accent?: boolean }) => (
+  <div className="min-w-0"><p className="text-xs text-white/60">{l}</p><p className={`font-display mt-1 text-xl font-extrabold tabular-nums [overflow-wrap:anywhere] sm:text-2xl ${accent ? 'text-brand' : ''}`}>{v}</p></div>
+);
 const Row = ({ k, v, strong }: { k: string; v: string; strong?: boolean }) => (
   <div className="flex min-w-0 justify-between gap-3 border-b border-line/70 pb-1"><dt className="text-muted">{k}</dt><dd className={`min-w-0 text-right tabular-nums [overflow-wrap:anywhere] ${strong ? 'font-semibold' : 'font-medium'}`}>{v}</dd></div>
 );

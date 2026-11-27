@@ -46,6 +46,7 @@ export const BillExtraction = z.object({
   history: z.array(z.object({
     month: z.string().describe('Mes en formato AAAA-MM'),
     kwh: z.number().describe('Consumo de ese mes en kWh'),
+    usd: z.number().nullable().describe('Valor total facturado ese mes en USD, solo si el historial lo muestra; si no, null'),
   })).describe('Historial de consumo mensual que muestre la planilla (tabla o gráfico), incluido el mes facturado; vacío si no hay'),
   notes: z.string().nullable().describe('Observación breve sobre la lectura (dudas, valores ilegibles), sin datos personales'),
   // Ampliación: todo lo que la planilla muestre para calcular con la tarifa oficial. Nunca datos personales.
@@ -100,6 +101,8 @@ export type BillData = {
   totalUsd: number | null;
   demandKw: number | null;
   history: { month: string; kwh: number }[];   // ordenado, sin repetidos, máximo 24 meses
+  /** Valores facturados por mes, si el historial los muestra (ordenado). */
+  billedHistory: { month: string; usd: number }[];
   notes: string | null;
 };
 
@@ -187,10 +190,13 @@ export function tariffKeyFromBill(segment: BillData['segment'], category: string
 /** Valida rangos y formatos de la propuesta de la IA. Lo que no es plausible se descarta (el cliente lo completa). */
 export function sanitizeExtraction(x: BillExtraction): BillData {
   const byMonth = new Map<string, number>();
+  const usdByMonth = new Map<string, number>();
   for (const h of x.history ?? []) {
     const m = (h.month ?? '').trim();
     const kwh = inRange(h.kwh, 0, 10_000_000);
     if (MONTH_RE.test(m) && kwh != null && !byMonth.has(m)) byMonth.set(m, kwh);
+    const usd = inRange(h.usd ?? null, 0.5, 5_000_000);
+    if (MONTH_RE.test(m) && usd != null && !usdByMonth.has(m)) usdByMonth.set(m, usd);
   }
   const period = MONTH_RE.test((x.billing_period ?? '').trim()) ? x.billing_period!.trim() : null;
   const energyKwh = inRange(x.energy_kwh, 1, 10_000_000);
@@ -213,6 +219,7 @@ export function sanitizeExtraction(x: BillExtraction): BillData {
     tariffCategory, billingPeriod: period,
     energyKwh, electricityUsd: inRange(x.electricity_usd, 0.5, 5_000_000), totalUsd: inRange(x.total_usd, 0.5, 5_000_000),
     demandKw, history, notes: clip(x.notes, 300),
+    billedHistory: [...usdByMonth.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-24).map(([month, usd]) => ({ month, usd })),
     segment, voltage, province: clip(x.province, 40), canton: clip(x.canton, 60), demandRegisteredKw,
     demandHistory: demandHistory.sort((a, b) => a.month.localeCompare(b.month)).slice(-24),
     timeOfUse, powerFactor: inRange(x.power_factor, 0.1, 1), charges,
@@ -239,6 +246,9 @@ export type BillCalcInput = {
   canton?: string | null;
   periodKwh?: Partial<Record<PeriodKey, number>> | null;
   powerFactor?: number | null;
+  /** Facturación real de referencia para el retorno: promedio de 12 meses facturados o una sola planilla. */
+  billedUsd?: number | null;
+  billedMonths?: number;
   /** Avisos para el cliente antes de confirmar. */
   warnings: string[];
 };
@@ -273,6 +283,7 @@ export function toCalculatorInput(d: BillData, mode: CalcMode): BillCalcInput | 
     history: slots, demandKw: demand != null ? fmt(demand) : '', distributor: d.distributor ?? '',
     segment: d.segment, tariffKey: d.tariffKey, province: d.province, canton: d.canton,
     periodKwh: d.timeOfUse?.kwh ?? null, powerFactor: d.powerFactor,
+    ...billedReference(d),
   };
   let out: BillCalcInput;
   if (mode === 'profesional' && full) {
@@ -306,6 +317,15 @@ export function toCalculatorInput(d: BillData, mode: CalcMode): BillCalcInput | 
   if (d.uncertain.length) warnings.push(`Revisa con atención: ${d.uncertain.join(', ')} (lectura con dudas).`);
   if (d.notes) warnings.push(`Nota de la lectura: ${d.notes}`);
   return out;
+}
+
+/** Facturación de referencia: promedio de los 12 últimos meses facturados si están todos; si no, el valor de esta planilla. */
+export function billedReference(d: Pick<BillData, 'billedHistory' | 'totalUsd' | 'electricityUsd'>): { billedUsd: number | null; billedMonths: number } {
+  const last = d.billedHistory.at(-1)?.month;
+  const win = last ? d.billedHistory.filter((h) => h.month > addMonths(last, -12)) : [];
+  if (win.length === 12) return { billedUsd: Math.round((win.reduce((a, h) => a + h.usd, 0) / 12) * 100) / 100, billedMonths: 12 };
+  const one = d.totalUsd ?? d.electricityUsd;
+  return { billedUsd: one, billedMonths: one != null ? 1 : 0 };
 }
 
 // ---------------------------------------------------------------- Confirmación

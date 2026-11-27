@@ -38,6 +38,7 @@ export type Alternative = {
   /** Motivo si no es aplicable o si quedó limitada. */
   reason?: string;
   kwp: number; modules: number; inverterKw: number;
+  /** backupKw: carga PROMEDIO que cubre la reserva de backupHours (los picos dimensionan el inversor). */
   battery: { nominalKwh: number; usableKwh: number; backupHours: number | null; backupKw: number | null } | null;
   areaM2: number;
   annualGenerationKwh: number;
@@ -54,6 +55,13 @@ export type Alternative = {
   monthly: { generation: number[]; self: number[]; imports: number[]; exports: number[]; billBefore: number[]; billAfter: number[] };
   labels: string[];
   warnings: string[];
+  /** Resumen comercial con la facturación real como referencia (lo llena runStudy). */
+  summary?: AlternativeSummary;
+};
+
+export type AlternativeSummary = {
+  currentMonthlyUsd: number; residualMonthlyUsd: number; savingMonthlyUsd: number; savingYearUsd: number;
+  investmentUsd: number; paybackYears: number | null;
 };
 
 export type SurfaceResult = {
@@ -200,7 +208,6 @@ export function computeAlternatives(i: AlternativesInput): { surfaces: SurfaceRe
   const mountOn = mountingSplit(i, kwpOn, structuredClone(perSurface));
   const onWarnings = ['Un sistema On Grid convencional se apaga cuando se va la luz: no da respaldo durante apagones.'];
   if (!areaKnown) onWarnings.push(`${perSurface.some((x) => x.areaM2 != null) ? 'No conocemos toda el área disponible' : 'No conocemos el área disponible'}: se necesitan unos ${surfaces.requiredAreaM2} m² para la potencia ideal; lo confirmaremos en la visita.`);
-  if (bestNpv <= 0 && kwpOn > 0) onWarnings.push('Con los precios y la tarifa actuales, ninguna potencia recupera la inversión dentro de la vida útil: el beneficio es principalmente ambiental o de respaldo.');
   if (surfaces.additionalKwp > 0) onWarnings.push(`El espacio indicado limita la potencia: faltan unos ${surfaces.additionalKwp} kWp (unos ${surfaces.additionalAreaM2} m²) para la potencia ideal.`);
   const onGrid: Alternative = {
     key: 'onGrid', name: 'Energy On Grid', applicable: kwpOn > 0, reason: kwpOn > 0 ? undefined : 'El espacio indicado no alcanza ni para un módulo.',
@@ -213,8 +220,10 @@ export function computeAlternatives(i: AlternativesInput): { surfaces: SurfaceRe
   const avgKw = annual / 8760;
   const scope = i.backup === 'ninguno' ? 'esencial' : i.backup;
   const hours = i.backupHours ?? t.hybridBackupHours;
-  const backupKw = avgKw * t.peakToAverageLoad[i.segment] * t.backupLoadShare[scope];
-  const backupEnergy = avgKw * t.backupLoadShare[scope] * hours;
+  // La reserva se dimensiona con la carga PROMEDIO respaldada; los picos (arranques) solo dimensionan el inversor.
+  const backupAvgKw = avgKw * t.backupLoadShare[scope];
+  const backupKw = backupAvgKw * t.peakToAverageLoad[i.segment];
+  const backupEnergy = backupAvgKw * hours;
   const usableFrac = Math.min(t.batteryUsableDoD, 1 - t.socMinReserve); // DoD y reserva mínima no se suman
   const dischEff = Math.sqrt(t.batteryRoundTrip);
   // Sin compensación de excedentes, la batería también guarda el sobrante del día (si es mayor que la necesidad de respaldo).
@@ -229,13 +238,13 @@ export function computeAlternatives(i: AlternativesInput): { surfaces: SurfaceRe
   const mountHy = mountingSplit(i, kwpOn, structuredClone(perSurface));
   const hyCommon = common(yHy);
   const hyWarnings = [
-    `Respaldo estimado de ${hours} h para las cargas ${scope === 'total' ? 'de todo el inmueble' : scope === 'parcial' ? 'principales' : 'esenciales'} (unos ${r1(backupKw)} kW). Es preliminar: se confirma con el inventario de cargas y sus arranques.`,
+    `Reserva de ${hours} h para las cargas ${scope === 'total' ? 'de todo el inmueble' : scope === 'parcial' ? 'principales' : 'esenciales'} con un consumo promedio de ${r1(backupAvgKw)} kW (picos de hasta ${r1(backupKw)} kW, que definen el inversor). Es preliminar: se confirma con el inventario de cargas y sus arranques.`,
   ];
   if (s.demand) hyWarnings.push('No se considera reducción del cargo por demanda con baterías: se demuestra solo con mediciones horarias de demanda.');
   const hybrid: Alternative = {
     key: 'hybrid', name: 'Energy Hybrid', applicable: kwpOn > 0, reason: onGrid.reason,
     kwp: r2(kwpOn), modules: roundModules(kwpOn), inverterKw: roundInverter(Math.max(kwpOn / t.dcAcRatio, backupKw)),
-    battery: { nominalKwh: nominal, usableKwh: r1(usable), backupHours: hours, backupKw: r1(backupKw) },
+    battery: { nominalKwh: nominal, usableKwh: r1(usable), backupHours: hours, backupKw: r1(backupAvgKw) },
     areaM2: onGrid.areaM2, ...hyCommon, batteryEconomicBenefitYear1: r2(hyCommon.savingYear1 - onGrid.savingYear1),
     residualCharges: RESIDUAL(s, compensation), scenarios: finance('hybrid', kwpOn, nominal, yHy, mountHy), monthly: monthly(yHy), labels: [], warnings: hyWarnings,
   };
@@ -292,7 +301,7 @@ export function computeAlternatives(i: AlternativesInput): { surfaces: SurfaceRe
   const offGrid: Alternative = {
     key: 'offGrid', name: 'Energy Off Grid', applicable: offApplicable, reason: offReason,
     kwp: r2(kwpOff), modules: roundModules(kwpOff), inverterKw: roundInverter(avgKw * t.peakToAverageLoad[i.segment]),
-    battery: { nominalKwh: nomOff, usableKwh: r1(nomOff * usableFrac), backupHours: t.offGridAutonomyHours, backupKw: r1(avgKw * t.peakToAverageLoad[i.segment]) },
+    battery: { nominalKwh: nomOff, usableKwh: r1(nomOff * usableFrac), backupHours: t.offGridAutonomyHours, backupKw: r1(avgKw) },
     areaM2: Math.round(m2For(kwpOff)), annualGenerationKwh: Math.round(genOff), coverage: r2(rel), selfConsumption: genOff > 0 ? r2(servedYear / genOff) : 0,
     billBeforeYear: r2(offBefore), billAfterYear: 0, savingYear1: r2(offBefore), residualCharges: [], reliability: r2(rel),
     costOfEnergyUsdPerKwh: servedYear > 0 ? r2(offScen.base.lcoe * genOff / servedYear) : undefined,

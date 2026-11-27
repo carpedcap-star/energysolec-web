@@ -1,5 +1,6 @@
 import type { Study } from '@/lib/data/types';
 import { fmtEc } from '@/lib/services/followup';
+import { summaryOf } from '@/components/calculator/alternatives';
 import { fmtKwh, fmtKwp, fmtNum, fmtPct, fmtUsd, fmtYears } from '@/lib/format';
 
 const SURFACE: Record<string, string> = { techo_metalico: 'Techo de metal', techo_inclinado: 'Techo inclinado', losa: 'Losa', terreno: 'Terreno' };
@@ -25,7 +26,7 @@ export function StudyPanel({ studies }: { studies: Study[] }) {
               <div className="relative mt-3 overflow-x-auto">
                 <table className="w-full min-w-[640px] text-sm">
                   <caption className="sr-only">Alternativas del estudio {st.code}</caption>
-                  <thead className="text-left text-xs uppercase tracking-wider text-muted"><tr>{['Alternativa', 'Potencia', 'Baterías', 'Área', 'Inversión', 'Ahorro año 1', 'Retorno', 'TIR'].map((h) => <th key={h} scope="col" className="py-2 pr-3">{h}</th>)}</tr></thead>
+                  <thead className="text-left text-xs uppercase tracking-wider text-muted"><tr>{['Alternativa', 'Potencia', 'Baterías', 'Área', 'Inversión', 'Ahorro anual', 'Retorno simple', 'TIR'].map((h) => <th key={h} scope="col" className="py-2 pr-3">{h}</th>)}</tr></thead>
                   <tbody>{alts.map((a) => {
                     const f = a.scenarios.base;
                     return (
@@ -35,9 +36,9 @@ export function StudyPanel({ studies }: { studies: Study[] }) {
                           <td className="py-2 pr-3 tabular-nums">{fmtKwp(a.kwp)}</td>
                           <td className="py-2 pr-3 tabular-nums">{a.battery ? `${fmtNum(a.battery.nominalKwh)} kWh` : '—'}</td>
                           <td className="py-2 pr-3 tabular-nums">{fmtNum(a.areaM2, 0)} m²</td>
-                          <td className="py-2 pr-3 tabular-nums">{fmtUsd(f.capex.total)}</td>
-                          <td className="py-2 pr-3 tabular-nums">{a.key === 'offGrid' ? `${fmtUsd(a.billBeforeYear)} evitados` : fmtUsd(a.savingYear1)}</td>
-                          <td className="py-2 pr-3 tabular-nums">{fmtYears(f.simplePayback)}</td>
+                          <td className="py-2 pr-3 tabular-nums">{fmtUsd(summaryOf(a).investmentUsd)}</td>
+                          <td className="py-2 pr-3 tabular-nums">{fmtUsd(summaryOf(a).savingYearUsd)}</td>
+                          <td className="py-2 pr-3 tabular-nums">{fmtYears(summaryOf(a).paybackYears)}</td>
                           <td className="py-2 pr-3 tabular-nums">{f.irr == null ? 'n/d' : fmtPct(f.irr)}</td>
                         </> : <td colSpan={7} className="py-2 pr-3 text-muted">No aplica: {a.reason ?? '—'}</td>}
                       </tr>

@@ -15,7 +15,7 @@ test.describe('sitio público', () => {
   test('la calculadora entrega el estudio tras el registro', async ({ page }, info) => {
     await page.goto('/calculadora');
     await page.getByLabel('Factura mensual promedio (USD) *').fill('85');
-    for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Continuar' }).click();
+    for (let i = 0; i < 2; i++) await page.getByRole('button', { name: 'Continuar' }).click();
     await page.getByRole('button', { name: 'Calcular mi estudio' }).click();
     // Sin acceso a PVGIS/NASA el motor usa el respaldo regional: el flujo debe completarse igual.
     await expect(page.getByText('Tu estudio energético personalizado está listo.')).toBeVisible({ timeout: 60_000 });
@@ -36,7 +36,7 @@ test.describe('sitio público', () => {
     for (const [i, phone, marketing] of [[0, '', false], [1, '099 123 4567', true], [2, '+593 99 123 4567', false]] as const) {
       await page.goto('/calculadora');
       await page.getByLabel('Factura mensual promedio (USD) *').fill('85');
-      for (let k = 0; k < 3; k++) await page.getByRole('button', { name: 'Continuar' }).click();
+      for (let k = 0; k < 2; k++) await page.getByRole('button', { name: 'Continuar' }).click();
       await page.getByRole('button', { name: 'Calcular mi estudio' }).click();
       const email = `utm${i}-${tag(info)}-${info.retry}@example.com`;
       await page.getByLabel('Nombre *').fill(`Cliente UTM ${i}`, { timeout: 60_000 });
@@ -59,27 +59,25 @@ test.describe('sitio público', () => {
     }
   });
 
-  test('calculadora: superficies, respaldo y tres alternativas', async ({ page }, info) => {
+  test('calculadora en tres pasos: superficies y tres alternativas con resumen comercial', async ({ page }, info) => {
     await page.goto('/calculadora?segmento=comercial');
     await page.getByRole('button', { name: 'Continuar' }).click();
     await expect(page.getByRole('alert').filter({ hasText: /./ })).toContainText('factura');
     await page.getByRole('radio', { name: 'Consumo mensual (kWh)' }).click();
     await page.getByLabel('Consumo mensual promedio (kWh) *').fill('4000');
-    await page.getByLabel('Tarifa de tu planilla').selectOption('COM-BV-D');
-    await page.getByLabel('Demanda facturable (kW)').fill('25');
+    await page.getByLabel('Valor de la factura (USD, opcional)').fill('520');
+    await expect(page.getByLabel('Demanda facturable (kW)')).toHaveCount(0); // sin datos técnicos
     await page.getByRole('button', { name: 'Continuar' }).click();
     await page.getByLabel('Cantón o ciudad').fill('Guayaquil');
     await expect(page.getByLabel('Empresa distribuidora')).toContainText('Según mi ubicación: CNEL EP Guayaquil');
     await page.getByRole('button', { name: 'Continuar' }).click();
-    await page.getByLabel('Techo de metal').check();
-    await page.getByRole('button', { name: 'Continuar' }).click();
+    await page.getByRole('checkbox', { name: /^Techo/ }).check();
+    await page.getByRole('button', { name: 'Calcular mi estudio' }).click();
     await expect(page.getByRole('alert').filter({ hasText: /./ })).toContainText('No conozco el área');
-    await page.getByLabel('Área disponible (m²)').fill('150');
+    await page.getByLabel('Tipo de techo').selectOption('techo_metalico');
+    await page.getByLabel('Área aproximada (m²)').fill('150');
     await page.getByLabel('Terreno').check();
     await page.getByLabel('No conozco el área').nth(1).check();
-    await page.getByRole('button', { name: 'Continuar' }).click();
-    await page.getByLabel('Respaldo en apagones').check();
-    await page.getByRole('radio', { name: '4 h', exact: true }).click();
     await page.getByRole('button', { name: 'Calcular mi estudio' }).click();
     await page.getByLabel('Nombre *').fill('Cliente Alternativas', { timeout: 60_000 });
     await page.getByLabel('Correo electrónico *').fill(`alt-${tag(info)}@example.com`);
@@ -87,9 +85,12 @@ test.describe('sitio público', () => {
     await page.getByRole('button', { name: 'Ver mi estudio y recibirlo por correo' }).click();
     await page.waitForURL(/\/calculadora\/estudio\/ESE-\d{4}-\d{6}\?t=/);
     for (const n of ['Energy On Grid', 'Energy Hybrid', 'Energy Off Grid']) await expect(page.getByRole('heading', { name: n })).toBeVisible();
-    await expect(page.getByText('Tu espacio disponible')).toBeVisible();
-    await expect(page.getByText(/Techo de metal: 150 m²/)).toBeVisible();
-    await expect(page.getByText(/Respaldo estimado/).first()).toBeVisible();
+    // Lo que paga hoy es lo que el cliente indicó; VAN y TIR no se muestran (van en el informe).
+    await expect(page.getByText('Hoy pagas al mes')).toBeVisible();
+    await expect(page.getByText('$520').first()).toBeVisible();
+    await expect(page.getByText('Recuperas tu inversión en')).toBeVisible();
+    await expect(page.getByText(/^VAN$|^TIR$/)).toHaveCount(0);
+    await expect(page.getByText(/Supuestos y advertencias del cálculo/)).toBeVisible();
     await expectNoOverflow(page);
     // Informe PDF con la página de alternativas y ficha del lead en el CRM.
     const pdf = await page.request.get(page.url().replace('/calculadora/estudio/', '/api/study/').replace('?t=', '/pdf?t='));

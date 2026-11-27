@@ -6,6 +6,7 @@ import { getContact } from '../site-settings';
 import type { Study } from '../data/types';
 import type { StudyInput } from '../engine/study';
 import { SITE } from '../site';
+import { summaryOf } from '@/components/calculator/alternatives';
 import { fmtKwh, fmtKwp, fmtNum, fmtPct, fmtUsd, fmtYears, MONTHS_ES } from '../format';
 
 const Y = SITE.brand.yellow, G = SITE.brand.graphite, B = SITE.brand.blue;
@@ -98,10 +99,12 @@ function AlternativesTable({ r }: { r: Study['results'] }) {
     ['Área requerida', (a) => `${fmtNum(a.areaM2, 0)} m²`],
     ['Generación año 1', (a) => fmtKwh(a.annualGenerationKwh)],
     ['Cobertura del consumo', (a) => fmtPct(a.coverage)],
-    ['Inversión (IVA incl.)', (a) => fmtUsd(a.scenarios.base.capex.total)],
-    ['Ahorro año 1', (a) => (a.key === 'offGrid' ? `${fmtUsd(a.billBeforeYear)} evitados` : fmtUsd(a.savingYear1))],
-    ['Planilla anual', (a) => (a.key === 'offGrid' ? 'Sin conexión' : `${fmtUsd(a.billBeforeYear)} a ${fmtUsd(a.billAfterYear)}`)],
-    ['Retorno simple', (a) => fmtYears(a.scenarios.base.simplePayback)],
+    ['Inversión (IVA incl.)', (a) => fmtUsd(summaryOf(a).investmentUsd)],
+    ['Factura mensual actual', (a) => fmtUsd(summaryOf(a).currentMonthlyUsd)],
+    ['Factura mensual con el sistema', (a) => (a.key === 'offGrid' ? 'Sin conexión' : fmtUsd(summaryOf(a).residualMonthlyUsd))],
+    ['Ahorro mensual / anual', (a) => `${fmtUsd(summaryOf(a).savingMonthlyUsd)} / ${fmtUsd(summaryOf(a).savingYearUsd)}`],
+    ['Retorno simple (bruto)', (a) => fmtYears(summaryOf(a).paybackYears)],
+    ['Retorno neto de mantenimiento y reemplazos', (a) => fmtYears(a.scenarios.base.netPayback ?? null)],
     ['VAN', (a) => fmtUsd(a.scenarios.base.npv)],
     ['TIR', (a) => (a.scenarios.base.irr == null ? 'n/d' : fmtPct(a.scenarios.base.irr))],
     ['Suministro / costo energía', (a) => (a.key === 'offGrid' ? `${a.reliability != null ? fmtPct(a.reliability) : '—'} · $${(a.costOfEnergyUsdPerKwh ?? 0).toFixed(3)}/kWh` : '—')],
@@ -126,6 +129,8 @@ function StudyDoc({ study, contact, company }: { study: Study; contact: ReportCo
   const date = new Date(study.created_at).toLocaleDateString('es-EC', { day: '2-digit', month: 'long', year: 'numeric' });
   const sc = [r.scenarios.conservador, r.scenarios.base, r.scenarios.optimista];
   const scName = ['Conservador', 'Base', 'Optimista'];
+  const onAlt = r.alternatives?.find((a) => a.key === 'onGrid');
+  const onSum = onAlt ? summaryOf(onAlt) : null;
   return (
     <Document title={`Estudio solar ${study.code}`} author={SITE.legalName} language="es">
       {/* Portada */}
@@ -176,13 +181,26 @@ function StudyDoc({ study, contact, company }: { study: Study; contact: ReportCo
         <Text style={[s.muted, { marginBottom: 6 }]}>Consumo anual: {fmtKwh(r.consumption.annualKwh)}{r.consumption.estimatedFromBill ? ' (estimado a partir de la factura)' : ''}. Autoconsumo de la generación: {fmtPct(z.selfConsumptionRatio)}.</Text>
         <MonthlyChart cons={r.consumption.monthlyKwh} gen={z.monthlyGeneration} self={z.monthlySelfConsumed} />
 
-        <Text style={[s.h2, { marginTop: 14 }]}>Resultados económicos (escenario base)</Text>
-        <View style={s.row}>
-          <Kpi v={fmtUsd(b.capex.total)} l="Inversión estimada (IVA incl.)" />
-          <Kpi v={fmtUsd(b.savingMonthYear1)} l="Ahorro mensual promedio" />
-          <Kpi v={fmtUsd(b.savingYear1)} l="Ahorro año 1" />
-          <Kpi v={fmtYears(b.simplePayback)} l="Retorno simple" />
-        </View>
+        <Text style={[s.h2, { marginTop: 14 }]}>Resultados económicos{onSum ? ' (sistema conectado a la red)' : ' (escenario base)'}</Text>
+        {onSum ? (<>
+          <View style={[s.row, { marginBottom: 6 }]}>
+            <Kpi v={fmtUsd(onSum.currentMonthlyUsd)} l="Factura mensual actual" />
+            <Kpi v={fmtUsd(onSum.residualMonthlyUsd)} l="Factura mensual con el sistema" />
+            <Kpi v={fmtUsd(onSum.savingMonthlyUsd)} l="Ahorro mensual" />
+          </View>
+          <View style={s.row}>
+            <Kpi v={fmtUsd(onSum.investmentUsd)} l="Inversión (IVA incl.)" />
+            <Kpi v={fmtUsd(onSum.savingYearUsd)} l="Ahorro anual" />
+            <Kpi v={fmtYears(onSum.paybackYears)} l="Retorno simple (bruto)" />
+          </View>
+        </>) : (
+          <View style={s.row}>
+            <Kpi v={fmtUsd(b.capex.total)} l="Inversión estimada (IVA incl.)" />
+            <Kpi v={fmtUsd(b.savingMonthYear1)} l="Ahorro mensual promedio" />
+            <Kpi v={fmtUsd(b.savingYear1)} l="Ahorro año 1" />
+            <Kpi v={fmtYears(b.simplePayback)} l="Retorno simple" />
+          </View>
+        )}
         <Footer code={study.code} wa={company.whatsappDisplay} />
       </Page>
 
@@ -221,7 +239,8 @@ function StudyDoc({ study, contact, company }: { study: Study; contact: ReportCo
             ['Inversión estimada', (x) => fmtUsd(x.capex.total)],
             ['Ahorro año 1', (x) => fmtUsd(x.savingYear1)],
             ['Reducción de la factura', (x) => fmtPct(x.billReduction)],
-            ['Retorno simple', (x) => fmtYears(x.simplePayback)],
+            ['Retorno simple bruto (factura estimada con la tarifa)', (x) => fmtYears(x.simplePayback)],
+            ['Retorno neto de mantenimiento y reemplazos', (x) => fmtYears(x.netPayback ?? null)],
             ['Retorno descontado', (x) => fmtYears(x.discountedPayback)],
             ['VAN', (x) => fmtUsd(x.npv)],
             ['TIR', (x) => (x.irr == null ? 'n/d' : fmtPct(x.irr))],
@@ -262,7 +281,8 @@ function StudyDoc({ study, contact, company }: { study: Study; contact: ReportCo
         <Text style={[s.h3, { marginTop: 10 }]}>Pérdidas del sistema consideradas</Text>
         {z.lossItems.map((l) => <Text key={l.label}>• {l.label}: {fmtNum(l.loss * 100)} %</Text>)}
         <Text style={[s.h3, { marginTop: 10 }]}>Fuentes</Text>
-        <Text>• Recurso solar: {r.resource.source}.{r.resource.candidates?.length ? ` Valores comparados: ${r.resource.candidates.map((c) => `${c.source}${c.period ? ` (${c.period})` : ''} ${c.annual} kWh/kWp`).join('; ')}.` : ''}</Text>
+        <Text>• Recurso solar: {r.resource.source}.{r.resource.candidates?.length ? ` Valores comparados, ANTES de las pérdidas del sistema: ${r.resource.candidates.map((c) => `${c.source}${c.period ? ` (${c.period})` : ''} ${c.annual} kWh/kWp`).join('; ')}. Rendimiento neto del año 1, con pérdidas y degradación aplicadas una sola vez: ${fmtNum(z.specificYieldYear1, 0)} kWh/kWp.` : ''}</Text>
+        {r.billing && <Text>• Factura actual de referencia: {fmtUsd(r.billing.currentMonthlyUsd)}/mes ({({ planillas_12: 'promedio de 12 planillas', planilla: 'una planilla, referencia preliminar', declarada: 'valor indicado por el cliente', estimada: 'estimada con la tarifa oficial' } as Record<string, string>)[r.billing.source]}). Retorno simple = inversión / [(factura actual − factura residual) × 12].</Text>}
         {r.resource.notes?.map((n, i) => <Text key={i}>• {n}</Text>)}
         <Text>• Tarifa aplicada: {r.tariff.name} ({r.tariff.code}). {r.tariff.sourceNote}</Text>
         <Text>• Parámetros técnico-económicos: versión {r.paramsVersion}{r.paramsPlaceholder ? ' (provisional)' : ''}.</Text>

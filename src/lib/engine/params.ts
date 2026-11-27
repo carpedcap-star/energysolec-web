@@ -170,7 +170,7 @@ export const DEFAULT_PARAMS: CalcParams = {
       { upToKwp: 500, usdPerKwp: 720 },
       { upToKwp: 1e9, usdPerKwp: 640 },
     ],
-    engineeringShare: 0.05,
+    engineeringShare: 0,          // el precio por kWp es el precio final de venta: la ingeniería ya está incluida
     batteryUsdPerKwh: 480,
     vatOnCapex: 0.15,
     minimumProjectUsd: 3500,

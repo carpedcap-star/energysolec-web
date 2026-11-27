@@ -44,9 +44,13 @@ export const StudyInput = z.object({
   backupHours: z.number().min(0).max(48).optional(),
   criticalLoadKw: z.number().min(0).max(100_000).optional(),
   budgetUsd: z.number().positive().optional(),
+  /** Facturación real de referencia (lo que paga hoy): promedio de 12 meses facturados o una sola planilla. */
+  billedMonthlyUsd: z.number().positive().max(5_000_000).optional(),
+  billedMonths: z.number().int().min(0).max(24).optional(),
 }).refine((v) => v.monthlyKwh || v.monthlyBillUsd || v.monthlyHistoryKwh, { message: 'Indica tu consumo en kWh o el valor de tu factura.' });
 export type StudyInput = z.infer<typeof StudyInput>;
 
+const r2 = (x: number) => Math.round(x * 100) / 100;
 const PEAK_TO_DAYTIME: Record<string, number> = { manana: 0.55, mediodia: 0.7, tarde: 0.5, noche: 0.25, continuo: 0.45 };
 
 /** Tarifa con la que se calcula: del pliego oficial (estructura completa) o una tarifa manual heredada. */
@@ -85,6 +89,10 @@ export type StudyResult = {
   engine?: 2;
   paramsVersion: number;
   paramsPlaceholder: boolean;
+  /** Facturación actual de referencia para el resumen comercial y el retorno simple. */
+  billing?: { currentMonthlyUsd: number; source: 'planillas_12' | 'planilla' | 'declarada' | 'estimada' };
+  /** Limitaciones que el cliente debe ver siempre (las demás advertencias van plegadas). */
+  criticalWarnings?: string[];
   warnings: string[];
   disclaimer: string;
 };
@@ -173,6 +181,33 @@ export function runStudy(input: StudyInput, resource: SolarResource & { candidat
   if (p.financial.exportCompensation === 'net_balance')
     warnings.push('Excedentes valorados como créditos de energía (Regulación ARCONEL-005/24): se descuentan en meses siguientes y caducan a los 24 meses, sin pago en dinero. Requiere el trámite de autoabastecimiento con la distribuidora.');
 
+  // ---- Resumen comercial: lo que paga hoy (facturación real), lo que pagaría, ahorro, inversión y retorno simple bruto.
+  // Retorno simple = inversión total / [(factura mensual actual − factura mensual residual) × 12]. El residual parte de la
+  // factura actual y descuenta solo el ahorro que el motor calcula (cobertura alcanzable, superficie, cargos fijos).
+  const engineMonthly = on.billBeforeYear / 12;
+  const billing: NonNullable<StudyResult['billing']> = input.billedMonthlyUsd
+    ? { currentMonthlyUsd: r2(input.billedMonthlyUsd), source: (input.billedMonths ?? 0) >= 12 ? 'planillas_12' : (input.billedMonths ?? 0) >= 1 ? 'planilla' : 'declarada' }
+    : input.monthlyBillUsd ? { currentMonthlyUsd: r2(input.monthlyBillUsd), source: 'declarada' } : { currentMonthlyUsd: r2(engineMonthly), source: 'estimada' };
+  const critical: string[] = [];
+  for (const a of alt.alternatives) {
+    const inv = r2(a.scenarios.base.capex.total);
+    const cur = billing.currentMonthlyUsd;
+    const residual = a.key === 'offGrid' ? 0 : Math.max(a.billAfterYear / 12, cur - a.savingYear1 / 12);
+    const saving = Math.max(0, cur - residual);
+    a.summary = { currentMonthlyUsd: r2(cur), residualMonthlyUsd: r2(residual), savingMonthlyUsd: r2(saving), savingYearUsd: r2(saving * 12), investmentUsd: inv, paybackYears: saving > 0 ? round(inv / (saving * 12), 1) : null };
+    if (a.applicable && (a.summary.paybackYears == null || a.summary.paybackYears > p.financial.lifetimeYears))
+      a.warnings.unshift(`Con los precios y la tarifa actuales, esta alternativa no recupera la inversión dentro de la vida útil de ${p.financial.lifetimeYears} años.`);
+  }
+  if (billing.source === 'planilla') warnings.push('El ahorro y el retorno toman como referencia el valor de una sola planilla: es una estimación preliminar. Con 12 meses facturados el resultado es más preciso.');
+  if (billing.source === 'estimada') warnings.push('No tenemos el valor de tu factura: lo que pagas hoy se estimó con la tarifa oficial y tu consumo.');
+  const rec = alt.alternatives.find((a) => a.key === alt.recommended);
+  if (rec?.summary && (rec.summary.paybackYears == null || rec.summary.paybackYears > p.financial.lifetimeYears))
+    critical.push(`Con los precios y la tarifa actuales, la alternativa recomendada no recupera la inversión dentro de la vida útil de ${p.financial.lifetimeYears} años.`);
+  if (tariff.isPlaceholder) critical.push('Tarifa y resultados PROVISIONALES: pendientes de la revisión de Energy Solutions Ecuador.');
+  else if (p.isPlaceholder) critical.push('Precios PROVISIONALES: pendientes de validación por Energy Solutions Ecuador.');
+  if (!resource.candidates?.length) critical.push('Usamos un rendimiento solar regional conservador: recalcularemos con datos de tu ubicación.');
+  if (alt.surfaces.additionalKwp > 0) critical.push(`Tu espacio limita el sistema: cubrirías cerca del ${Math.round((alt.surfaces.coverageReachable ?? 0) * 100)} % de tu consumo.`);
+
   const co2Year = (genYear * p.technical.gridCo2KgPerKwh) / 1000;
   const co2_25 = (on.scenarios.base.generationByYear.reduce((a, b) => a + b, 0) * p.technical.gridCo2KgPerKwh) / 1000;
   const avgMonth = Math.round(annual / 12);
@@ -185,7 +220,7 @@ export function runStudy(input: StudyInput, resource: SolarResource & { candidat
     tariff: { code: tariff.code, name: tariff.name, isPlaceholder: tariff.isPlaceholder, sourceNote: tariff.sourceNote, distributor: tariff.distributor?.name ?? null, scheme: s.scheme },
     billLines: s.scheme === 'UNICO' ? billLines : undefined,
     surfaces: alt.surfaces, alternatives: alt.alternatives, recommended: alt.recommended, engine: 2,
-    paramsVersion: p.version, paramsPlaceholder: p.isPlaceholder, warnings,
+    paramsVersion: p.version, paramsPlaceholder: p.isPlaceholder, billing, criticalWarnings: critical, warnings,
     disclaimer: 'Este estudio constituye una prefactibilidad técnica y económica referencial. No es una oferta ni una cotización formal: está sujeto a inspección en sitio, ingeniería definitiva, verificación regulatoria y cotización de Energy Solutions Ecuador S.A.S.',
   };
 }

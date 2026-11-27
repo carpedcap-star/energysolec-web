@@ -23,9 +23,9 @@ const MOUNTING_LABEL: Record<(typeof MOUNTING_PRICE_KEYS)[number], string> = {
 
 export const PARAM_SECTIONS: ParamSection[] = [
   {
-    id: 'precios', title: 'Precios', intro: 'Precio llave en mano por kWp (sin IVA) por tramo de tamaño: ver las tablas de tramos más arriba.',
+    id: 'precios', title: 'Precios', intro: 'Los tramos de arriba son el PRECIO FINAL DE VENTA por kWp sin IVA (equipos, instalación, ingeniería y margen). La inversión = precio por kWp × kWp + adicional de implantación + baterías + ingeniería adicional (si la hay) + IVA, una sola vez cada uno.',
     fields: [
-      pct('pricing.engineeringShare', 'Ingeniería y permisos', 'Sobre equipos e instalación.'),
+      pct('pricing.engineeringShare', 'Ingeniería y permisos adicionales', 'Déjalo en 0 % si el precio por kWp ya los incluye: si no, se cobrarían dos veces.'),
       pct('pricing.vatOnCapex', 'IVA sobre la inversión'),
       num('pricing.minimumProjectUsd', 'Proyecto mínimo', 'USD', 'Ningún estudio cotiza por debajo de este valor.'),
     ],

@@ -149,7 +149,8 @@ const STD_INVERTERS = [3, 3.6, 5, 6, 8, 10, 12, 15, 17, 20, 25, 30, 36, 40, 50, 
 export function roundInverter(kw: number) {
   const hit = STD_INVERTERS.find((s) => s >= kw * 0.98);
   if (hit) return hit;
-  return Math.ceil(kw / 330) * 330; // múltiplos de inversores string de gran potencia / centrales
+  // Más allá de un equipo: varios inversores en paralelo; la suma se redondea a 10 kW (respeta la relación CC/CA).
+  return Math.ceil((kw * 0.98) / 10) * 10;
 }
 export const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
 export const round = (x: number, d = 0) => Math.round(x * 10 ** d) / 10 ** d;

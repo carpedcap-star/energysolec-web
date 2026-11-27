@@ -82,7 +82,10 @@ export type FinanceResult = {
   billReduction: number;            // fracción de la factura que se reduce (nunca se asume 100 %)
   cashflows: number[];              // año 0..N
   cumulative: number[];
+  /** Retorno simple BRUTO: inversión total / ahorro bruto del año 1 (sin mantenimiento, degradación ni reemplazos). */
   simplePayback: number | null;
+  /** Año en que el flujo acumulado (neto de mantenimiento y reemplazos) se vuelve positivo; null si no ocurre. */
+  netPayback: number | null;
   discountedPayback: number | null;
   npv: number;
   irr: number | null;
@@ -141,7 +144,7 @@ export function financeScenario(
     billBeforeYear: y1.before, billAfterYear: y1.after,
     billReduction: y1.before > 0 ? (y1.before - y1.after) / y1.before : 0,
     cashflows: flows, cumulative,
-    simplePayback: payback(flows), discountedPayback: payback(disc),
+    simplePayback: y1.saving > 0 ? cx.total / y1.saving : null, netPayback: payback(flows), discountedPayback: payback(disc),
     npv: npv(f.discountRate, flows), irr: irr(flows),
     lcoe: pvCosts / pvEnergy,
     savings25: savingsSum,
@@ -196,7 +199,7 @@ export function evaluateInvestment(o: {
     scenario, capex: cx, savingYear1: saving1, savingMonthYear1: saving1 / 12,
     billBeforeYear: o.year1.before, billAfterYear: o.year1.before - saving1,
     billReduction: o.year1.before > 0 ? saving1 / o.year1.before : 0,
-    cashflows: flows, cumulative, simplePayback: payback(flows), discountedPayback: payback(disc),
+    cashflows: flows, cumulative, simplePayback: saving1 > 0 ? cx.total / saving1 : null, netPayback: payback(flows), discountedPayback: payback(disc),
     npv: npv(f.discountRate, flows), irr: irr(flows), lcoe: pvEnergy > 0 ? pvCosts / pvEnergy : 0, savings25: savingsSum,
     roi: cumulative[cumulative.length - 1] / cx.total, generationByYear: gens, loan,
   };

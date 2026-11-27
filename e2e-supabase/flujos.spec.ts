@@ -90,7 +90,7 @@ test('flujos principales contra Supabase', async ({ page: p, browser }) => {
   await test.step('calculadora: estudio, lead y desbloqueo', async () => {
     await anon.goto('/calculadora');
     await anon.getByLabel('Factura mensual promedio (USD) *').fill('85');
-    for (let i = 0; i < 3; i++) await anon.getByRole('button', { name: 'Continuar' }).click();
+    for (let i = 0; i < 2; i++) await anon.getByRole('button', { name: 'Continuar' }).click();
     await anon.getByRole('button', { name: 'Calcular mi estudio' }).click();
     await expect(anon.getByText('Tu estudio energético personalizado está listo.')).toBeVisible({ timeout: 60_000 });
     await anon.getByLabel('Nombre *').fill('Cliente SB');

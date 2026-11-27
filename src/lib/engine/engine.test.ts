@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { DEFAULT_PARAMS, CalcParams } from './params';
 import { monthlyBill, kwhFromBill } from './tariff';
 import { DEFAULT_TARIFFS } from './default-tariffs';
-import { sizeSystem, systemLossFactor, DAYS_IN_MONTH } from './solar';
+import { sizeSystem, systemLossFactor, DAYS_IN_MONTH, roundInverter } from './solar';
 import { npv, irr, payback, capex } from './finance';
 import { runStudy, StudyInput } from './study';
 import { CACHE_TTL_DAYS, cellFor, checkSources, fromGhi, getSolarResource, parseNasaPower, parsePvgis, validMonthly, type SourceResult } from './resource';
@@ -211,5 +211,38 @@ describe('recurso solar', () => {
     expect(r).toHaveLength(3);
     expect(r.find((x) => x.source === 'PVGIS-NSRDB')).toMatchObject({ ok: false, error: 'PVGIS-NSRDB 400: Location over the sea' });
     expect(r.find((x) => x.source === 'PVGIS-ERA5')).toMatchObject({ ok: true, annual: 1114, period: '2005–2023' });
+  });
+});
+
+describe('coherencia del resumen comercial', () => {
+  it('inversores: respeta la relación CC/CA también en potencias grandes', () => {
+    expect(roundInverter(487.8 / 1.2)).toBe(400); // 406,5 kW × 0,98 → 400 kW (CC/CA 1,22), antes 660 kW
+    expect(roundInverter(10 / 1.2)).toBe(10);
+  });
+  it('pérdidas una sola vez: rendimiento neto = rendimiento sin pérdidas × factor × (1 − degradación del año 1)', () => {
+    const input = StudyInput.parse({ mode: 'rapida', segment: 'residencial', objective: 'reducir_factura', province: 'Guayas', monthlyKwh: 300 });
+    const r = runStudy(input, flatResource(1110), res, P);
+    const { factor } = systemLossFactor(P, 'none');
+    expect(r.sizing.specificYieldYear1).toBe(Math.round(1110 * factor * (1 - P.technical.firstYearDegradation)));
+  });
+  it('retorno simple bruto con la facturación real: inversión / [(actual − residual) × 12]', () => {
+    const input = StudyInput.parse({ mode: 'rapida', segment: 'comercial', objective: 'reducir_factura', province: 'Guayas', monthlyKwh: 4000, billedMonthlyUsd: 520, billedMonths: 12 });
+    const r = runStudy(input, flatResource(1300), com, P);
+    expect(r.billing).toEqual({ currentMonthlyUsd: 520, source: 'planillas_12' });
+    for (const a of r.alternatives!) {
+      const s = a.summary!;
+      expect(s.currentMonthlyUsd).toBe(520);
+      expect(s.savingMonthlyUsd).toBeCloseTo(s.currentMonthlyUsd - s.residualMonthlyUsd, 1);
+      if (a.key !== 'offGrid') expect(s.residualMonthlyUsd).toBeGreaterThan(0); // la factura nunca llega a cero
+      if (s.paybackYears != null) expect(s.paybackYears).toBeCloseTo(s.investmentUsd / (s.savingMonthlyUsd * 12), 1);
+    }
+    const f = r.scenarios.base;
+    expect(f.simplePayback).toBeCloseTo(f.capex.total / f.savingYear1, 6); // bruto, sin mantenimiento
+  });
+  it('respaldo híbrido: la reserva útil cubre las horas a la carga promedio indicada', () => {
+    const input = StudyInput.parse({ mode: 'rapida', segment: 'comercial', objective: 'respaldo', province: 'Guayas', monthlyKwh: 30000, backup: 'esencial' });
+    const hy = runStudy(input, flatResource(1300), com, P).alternatives!.find((a) => a.key === 'hybrid')!;
+    const b = hy.battery!;
+    expect(b.usableKwh * Math.sqrt(P.technical.batteryRoundTrip)).toBeGreaterThanOrEqual(b.backupHours! * b.backupKw! - 0.5);
   });
 });
