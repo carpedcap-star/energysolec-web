@@ -15,7 +15,12 @@ const KEY = 'ese_consent_v1';
 
 declare global { interface Window { dataLayer: unknown[]; gtag?: (...a: unknown[]) => void; fbq?: (...a: unknown[]) => void } }
 
-export function getUtm(): Record<string, string> { try { return JSON.parse(localStorage.getItem('ese_utm') ?? '{}'); } catch { return {}; } }
+export function getUtm(): Record<string, string> {
+  try {
+    const raw = JSON.parse(localStorage.getItem('ese_utm') ?? '{}') as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(raw).filter(([, v]) => typeof v === 'string' || typeof v === 'number').map(([k, v]) => [k, String(v)]));
+  } catch { return {}; }
+}
 
 export function track(event: string, params: Record<string, unknown> = {}) {
   try { window.dataLayer?.push({ event, ...params }); window.fbq?.('trackCustom', event, params); } catch {}

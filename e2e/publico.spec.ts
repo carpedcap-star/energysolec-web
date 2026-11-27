@@ -29,6 +29,36 @@ test.describe('sitio público', () => {
     await expectNoOverflow(page);
   });
 
+  test('desbloqueo con UTM guardadas: WhatsApp vacío, nacional e internacional y consentimiento comercial', async ({ page }, info) => {
+    test.skip(isMobile(info), 'escenario de datos de una sola vez: se prueba en escritorio');
+    // Llegar por un enlace de campaña guarda las UTM con una marca de tiempo numérica (`_at`).
+    await page.goto('/calculadora?utm_source=e2e&utm_campaign=lanzamiento&gclid=abc123');
+    for (const [i, phone, marketing] of [[0, '', false], [1, '099 123 4567', true], [2, '+593 99 123 4567', false]] as const) {
+      await page.goto('/calculadora');
+      await page.getByLabel('Factura mensual promedio (USD) *').fill('85');
+      for (let k = 0; k < 3; k++) await page.getByRole('button', { name: 'Continuar' }).click();
+      await page.getByRole('button', { name: 'Calcular mi estudio' }).click();
+      const email = `utm${i}-${tag(info)}-${info.retry}@example.com`;
+      await page.getByLabel('Nombre *').fill(`Cliente UTM ${i}`, { timeout: 60_000 });
+      await page.getByLabel('Correo electrónico *').fill(email);
+      if (phone) await page.getByRole('textbox', { name: 'WhatsApp' }).fill(phone);
+      await page.getByRole('checkbox', { name: /Acepto la política de privacidad/ }).check();
+      if (marketing) await page.getByRole('checkbox', { name: /Autorizo recibir información comercial/ }).check();
+      await page.getByRole('button', { name: 'Ver mi estudio y recibirlo por correo' }).click();
+      await page.waitForURL(/\/calculadora\/estudio\/ESE-\d{4}-\d{6}\?t=/);
+      await expect(page.getByRole('heading', { name: 'Compara tus alternativas' })).toBeVisible();
+      const code = page.url().match(/ESE-\d{4}-\d{6}/)![0];
+      const pdf = await page.request.get(page.url().replace('/calculadora/estudio/', '/api/study/').replace('?t=', '/pdf?t='));
+      expect(pdf.status()).toBe(200);
+      const d = db();
+      const lead = d.leads.find((l: { email: string }) => l.email === email);
+      expect(lead.phone ?? '').toBe(phone);
+      expect(lead.utm).toMatchObject({ utm_source: 'e2e', utm_campaign: 'lanzamiento', gclid: 'abc123' });
+      expect(d.studies.find((s: { code: string }) => s.code === code)).toMatchObject({ unlocked: true, lead_id: lead.id });
+      expect(d.consents.find((c: { email: string; purpose: string }) => c.email === email && c.purpose === 'comercial_marketing').granted).toBe(marketing);
+    }
+  });
+
   test('calculadora: superficies, respaldo y tres alternativas', async ({ page }, info) => {
     await page.goto('/calculadora?segmento=comercial');
     await page.getByRole('button', { name: 'Continuar' }).click();

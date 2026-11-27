@@ -1,7 +1,14 @@
 import { z } from 'zod';
 
 const phone = z.string().trim().regex(/^\+?[0-9 ()-]{7,20}$/, 'Número de teléfono no válido');
-export const Utm = z.record(z.string(), z.string().max(200)).optional().default({});
+// El navegador guarda junto a las UTM la marca `_at` (número, Date.now()): se convierte a texto y se descarta cualquier
+// otro tipo, para que un dato de atribución nunca impida registrar un lead.
+export const Utm = z.preprocess(
+  (v) => (v && typeof v === 'object' && !Array.isArray(v)
+    ? Object.fromEntries(Object.entries(v).flatMap(([k, x]) => (typeof x === 'string' ? [[k, x]] : typeof x === 'number' && Number.isFinite(x) ? [[k, String(x)]] : [])))
+    : v),
+  z.record(z.string(), z.string().max(200)).optional().default({}),
+);
 
 export const LeadContact = z.object({
   name: z.string().trim().min(2, 'Ingresa tu nombre').max(120),
