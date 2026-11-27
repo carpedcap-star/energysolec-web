@@ -175,9 +175,14 @@ export async function getSolarResource(
   const ok = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
   if (ok.length === 0) return { ...regionalFallback(p, region), candidates: [] };
   const candidates: Candidate[] = ok.map((x) => ({ source: SOURCE_LABEL[x.source], annual: Math.round(sum(x.r.monthlyYieldPreLoss)), origin: x.origin, period: x.r.period, fetchedAt: x.r.fetchedAt }));
-  const chosen = ok.reduce((a, b) => (sum(a.r.monthlyYieldPreLoss) <= sum(b.r.monthlyYieldPreLoss) ? a : b));
+  // Todas las fuentes se piden sobre la misma base (rendimiento por kWp, plano inclinado, sin pérdidas de sistema).
+  // Criterio de Gerencia: «mediana» (con tres fuentes descarta el valor más alto y el más bajo; con dos se toma la menor,
+  // porque no hay mediana que las contraste) o «mínimo» (la más conservadora).
+  const sorted = [...ok].sort((a, b) => sum(a.r.monthlyYieldPreLoss) - sum(b.r.monthlyYieldPreLoss));
+  const median = p.technical.resourceSelection === 'mediana' && sorted.length >= 3;
+  const chosen = median ? sorted[Math.floor(sorted.length / 2)] : sorted[0];
   const notes: string[] = [];
-  if (ok.length > 1) notes.push(`Se compararon ${candidates.map((c) => `${c.source}: ${c.annual} kWh/kWp`).join(', ')}; se adoptó el valor menor.`);
+  if (ok.length > 1) notes.push(`Se compararon ${candidates.map((c) => `${c.source}: ${c.annual} kWh/kWp`).join(', ')}; ${median ? `se adoptó la mediana (${SOURCE_LABEL[chosen.source]}): descarta el valor más alto y el más bajo` : 'se adoptó el valor menor (criterio conservador)'}.`);
   else notes.push(`Solo respondió ${SOURCE_LABEL[chosen.source]}; el valor no pudo contrastarse con otra fuente.`);
   const missing = SOURCES.filter((s) => !ok.some((x) => x.source === s));
   if (missing.length && ok.length > 1) notes.push(`No respondió: ${missing.map((s) => SOURCE_LABEL[s]).join(', ')}.`);

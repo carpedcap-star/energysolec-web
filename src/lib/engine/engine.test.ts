@@ -11,6 +11,7 @@ import era5Gye from './fixtures/pvgis-era5-guayaquil.json';
 import nasaGye from './fixtures/nasa-power-guayaquil.json';
 
 const P = DEFAULT_PARAMS;
+const PMIN: typeof P = { ...P, technical: { ...P.technical, resourceSelection: 'minimo' } };
 const flatResource = (annual: number) => ({
   source: 'test', notes: [],
   monthlyYieldPreLoss: DAYS_IN_MONTH.map((d) => (annual * d) / 365),
@@ -142,11 +143,15 @@ describe('recurso solar', () => {
     expect(a.period).toBe('2001–2025');
     expect(Math.round(a.monthlyYieldPreLoss.reduce((x, y) => x + y))).toBe(1242);
   });
-  it('adopta el valor menor entre las tres fuentes (ERA5 en Guayaquil)', async () => {
+  it('misma base para las tres fuentes; por defecto la mediana (NASA en Guayaquil), o la menor si Gerencia lo elige', async () => {
     const r = await getSolarResource(-2.19, -79.88, 10, 'costa', P, ok, undefined, NOW);
     expect(r.candidates.map((c) => c.annual).sort()).toEqual([1114, 1242, 1431]);
-    expect(r.source).toMatch(/ERA5/);
-    expect(Math.round(r.monthlyYieldPreLoss.reduce((x, y) => x + y))).toBe(1114);
+    expect(r.source).toMatch(/NASA/);
+    expect(Math.round(r.monthlyYieldPreLoss.reduce((x, y) => x + y))).toBe(1242);
+    expect(r.notes[0]).toMatch(/mediana/);
+    const min = await getSolarResource(-2.19, -79.88, 10, 'costa', { ...P, technical: { ...P.technical, resourceSelection: 'minimo' } }, ok, undefined, NOW);
+    expect(min.source).toMatch(/ERA5/);
+    expect(Math.round(min.monthlyYieldPreLoss.reduce((x, y) => x + y))).toBe(1114);
   });
   it('rechaza valores de relleno (−999), meses faltantes y respuestas de otra base', () => {
     const bad = structuredClone(nasaGye); (bad.properties.parameter.ALLSKY_SFC_SW_DWN as Record<string, number>).MAR = -999;
@@ -165,7 +170,7 @@ describe('recurso solar', () => {
     expect(st.resource.notes?.join(' ')).toMatch(/recalcularse/);
     const real = runStudy(input, await getSolarResource(-2.19, -79.88, 10, 'costa', P, ok, undefined, NOW), com, P);
     expect(real.warnings.join(' ')).not.toMatch(/rendimiento regional/);
-    expect(real.resource.notes?.[0]).toMatch(/se adoptó el valor menor/);
+    expect(real.resource.notes?.[0]).toMatch(/se adoptó la mediana/);
   });
   it('celda de caché: 0,05° e inclinación entera', () => {
     expect(cellFor(-2.171, -79.9224, 10.4)).toEqual({ key: 'lat:-2.15|lng:-79.90|tilt:10', tilt: 10 });
@@ -175,21 +180,21 @@ describe('recurso solar', () => {
     const c = memCache();
     let calls = 0;
     const counting = (async (url: string) => { calls++; return new Response(JSON.stringify(live(url))); }) as unknown as typeof fetch;
-    await getSolarResource(-2.19, -79.88, 10, 'costa', P, counting, c, NOW);
+    await getSolarResource(-2.19, -79.88, 10, 'costa', PMIN, counting, c, NOW);
     expect(calls).toBe(3);
     expect(c.m.size).toBe(3);
-    const again = await getSolarResource(-2.191, -79.881, 10, 'costa', P, counting, c, NOW + 86_400e3);
+    const again = await getSolarResource(-2.191, -79.881, 10, 'costa', PMIN, counting, c, NOW + 86_400e3);
     expect(calls).toBe(3);
     expect(again.candidates.every((x) => x.origin === 'cache')).toBe(true);
     expect(again.source).toMatch(/ERA5/);
   });
   it('caché vencida: consulta de nuevo; si la fuente falla, usa el dato guardado con nota', async () => {
     const c = memCache();
-    await getSolarResource(-2.19, -79.88, 10, 'costa', P, ok, c, NOW);
+    await getSolarResource(-2.19, -79.88, 10, 'costa', PMIN, ok, c, NOW);
     const later = NOW + (CACHE_TTL_DAYS + 1) * 86_400e3;
     // ERA5 (la menor) no responde: sin el dato guardado, el mínimo subiría a NASA (menos conservador).
     const noEra5 = (async (url: string) => { if (url.includes('v5_3')) throw new Error('caída'); return new Response(JSON.stringify(live(url))); }) as unknown as typeof fetch;
-    const r = await getSolarResource(-2.19, -79.88, 10, 'costa', P, noEra5, c, later);
+    const r = await getSolarResource(-2.19, -79.88, 10, 'costa', PMIN, noEra5, c, later);
     expect(r.source).toMatch(/ERA5/);
     expect(r.candidates.find((x) => /ERA5/.test(x.source))?.origin).toBe('stale');
     expect(r.notes.join(' ')).toMatch(/último dato guardado \(2026-11-25\)/);

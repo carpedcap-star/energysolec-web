@@ -146,9 +146,13 @@ function ParamInput({ f, value, exportMode, onExportMode }: { f: ParamField; val
   if (f.kind === 'enum') return (
     <div className="min-w-0 sm:col-span-2">
       <label htmlFor={id} className="label">{f.label}</label>
-      <select id={id} name={f.path} value={exportMode} onChange={(e) => onExportMode(e.target.value)} className="input">
-        {f.options!.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-      </select>
+      {f.path === 'financial.exportCompensation'
+        ? <select id={id} name={f.path} value={exportMode} onChange={(e) => onExportMode(e.target.value)} className="input">
+          {f.options!.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        : <select id={id} name={f.path} defaultValue={value} className="input">
+          {f.options!.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>}
       {hint}
     </div>
   );

@@ -37,7 +37,7 @@ export function CalculatorWizard({ initialSegment, initialObjective, billUpload 
   const [f, setF] = useState<Record<string, any>>({
     segment: initialSegment ?? 'residencial', province: '', city: '', distributor: '', tariffCode: '',
     input: 'bill', monthlyBillUsd: '', monthlyKwh: '', history: Array(12).fill(''), demandKw: '',
-    periodKwh: null, powerFactor: null, billedUsd: null, billedMonths: 0, specialTariff: null, serviceUsd: null, energyUsd: null, lat: null, lng: null,
+    periodKwh: null, powerFactor: null, billedUsd: null, billedMonths: 0, specialTariff: null, serviceUsd: null, energyUsd: null, energyBandUsd: null, lat: null, lng: null,
   });
   // Respaldo: solo si el visitante llegó buscando baterías; capacidad y autonomía las define Gerencia en el panel.
   const wantsBackup = initialObjective === 'respaldo' || initialObjective === 'almacenamiento';
@@ -85,7 +85,7 @@ export function CalculatorWizard({ initialSegment, initialObjective, billUpload 
       segment: p.segment ?? x.segment, tariffCode: p.tariffKey ?? '', distributor: p.distributor || '',
       province: provinceName(p.province) ?? x.province, city: p.canton ?? x.city, periodKwh: p.periodKwh ?? null, powerFactor: p.powerFactor ?? null,
       billedUsd: p.billedUsd ?? null, billedMonths: p.billedMonths ?? 0,
-      specialTariff: p.specialTariff ?? null, serviceUsd: p.serviceUsd ?? null, energyUsd: p.energyUsd ?? null,
+      specialTariff: p.specialTariff ?? null, serviceUsd: p.serviceUsd ?? null, energyUsd: p.energyUsd ?? null, energyBandUsd: p.energyBandUsd ?? null,
     }));
     setBill(b); setManual(false); setEditPlace(false); setErr('');
   }
@@ -121,7 +121,7 @@ export function CalculatorWizard({ initialSegment, initialObjective, billUpload 
       periodKwh: fromBill && f.periodKwh ? f.periodKwh : undefined, powerFactor: fromBill && f.powerFactor ? f.powerFactor : undefined,
       billedMonthlyUsd: fromBill && f.billedUsd ? f.billedUsd : undefined, billedMonths: fromBill && f.billedUsd ? f.billedMonths : undefined,
       specialTariff: fromBill && f.specialTariff ? f.specialTariff : undefined, serviceUsd: fromBill && f.serviceUsd ? f.serviceUsd : undefined,
-      energyChargesUsd: fromBill && f.energyUsd ? f.energyUsd : undefined,
+      energyChargesUsd: fromBill && f.energyUsd ? f.energyUsd : undefined, energyBandUsd: fromBill && f.energyBandUsd ? f.energyBandUsd : undefined,
       surface: surfaces.length && surfaces.every((s) => s.type === 'terreno') ? 'terreno' : 'cubierta', surfaces: surfaces.length ? surfaces : undefined, availableAreaM2: known,
       tilt: 10, shading: 'none', wantsBattery: wantsBackup, backup: wantsBackup ? 'esencial' : 'ninguno',
       // Al calcular, el cliente confirma los datos leídos de su planilla.

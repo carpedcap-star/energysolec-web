@@ -140,17 +140,15 @@ export function voltageFrom(text: string | null): BillData['voltage'] {
  * tarifa diferenciada; con dos (08–22 y 22–08) es la horaria. Si una franja no se reconoce, no se usan (el estudio usa
  * el perfil tipo y lo advierte).
  */
-export function mapTimeOfUse(items: { label: string; hours: string | null; kwh: number }[]): BillData['timeOfUse'] {
-  const clean = items.filter((x) => Number.isFinite(x.kwh) && x.kwh >= 0);
-  if (clean.length < 2) return null;
-  const hrs = (x: { label: string; hours: string | null }) => normalize(`${x.label} ${x.hours ?? ''}`).replace(/h(\d\d)/g, ':$1').replace(/\s+/g, ' ');
-  const weekend = (t: string) => /sab|dom|feriad|fin de semana|s,? ?d|sdf/.test(t);
-  const has = (t: string, a: number, b: number) => new RegExp(`\\b0?${a}(:00)?\\s*(-|a|hasta)\\s*0?${b}(:00)?\\b`).test(t);
-  const four = clean.length >= 3 || clean.some((x) => weekend(hrs(x)) || /punta|media/.test(hrs(x)));
-  const out: Partial<Record<PeriodKey, number>> = {};
-  for (const x of clean) {
-    const t = hrs(x);
-    let k: PeriodKey | null = null;
+const bandText = (x: { label: string; hours: string | null }) => normalize(`${x.label} ${x.hours ?? ''}`).replace(/h(\d\d)/g, ':$1').replace(/\s+/g, ' ');
+const isWeekend = (t: string) => /sab|dom|feriad|fin de semana|s,? ?d|sdf/.test(t);
+const hasRange = (t: string, a: number, b: number) => new RegExp(`\\b0?${a}(:00)?\\s*(-|a|hasta)\\s*0?${b}(:00)?\\b`).test(t);
+
+/** Franja de un rubro o una línea de consumo, por su horario (manda) o su nombre. null si no se reconoce. */
+export function bandOf(x: { label: string; hours: string | null }, four: boolean): PeriodKey | null {
+  const t = bandText(x), weekend = isWeekend, has = hasRange;
+  let k: PeriodKey | null = null;
+  {
     // El horario manda sobre el nombre: «punta media 08-18» es la franja 08-18, no la punta.
     if (four) {
       if (weekend(t) && has(t, 18, 22)) k = 'sdf_18_22';
@@ -165,6 +163,17 @@ export function mapTimeOfUse(items: { label: string; hours: string | null; kwh: 
       if (has(t, 8, 22)) k = 'h08_22';
       else if (has(t, 22, 8)) k = 'h22_08';
     }
+  }
+  return k;
+}
+
+export function mapTimeOfUse(items: { label: string; hours: string | null; kwh: number }[]): BillData['timeOfUse'] {
+  const clean = items.filter((x) => Number.isFinite(x.kwh) && x.kwh >= 0);
+  if (clean.length < 2) return null;
+  const four = clean.length >= 3 || clean.some((x) => isWeekend(bandText(x)) || /punta|media/.test(bandText(x)));
+  const out: Partial<Record<PeriodKey, number>> = {};
+  for (const x of clean) {
+    const k = bandOf(x, four);
     if (!k) return null;
     out[k] = (out[k] ?? 0) + x.kwh;
   }
@@ -273,6 +282,8 @@ export type BillCalcInput = {
   serviceUsd?: number | null;
   energyUsd?: number | null;
   serviceKwh?: number | null;
+  /** Cargos de energía por franja (si la planilla los desglosa): permiten valorar la energía solar a su hora. */
+  energyBandUsd?: Partial<Record<PeriodKey, number>> | null;
   /** Avisos para el cliente antes de confirmar. */
   warnings: string[];
 };
@@ -310,6 +321,7 @@ export function toCalculatorInput(d: BillData, mode: CalcMode): BillCalcInput | 
     ...billedReference(d),
     specialTariff: d.specialTariff, serviceUsd: d.electricityUsd, serviceKwh: d.energyKwh,
     energyUsd: (() => { const e = d.charges.filter((c) => c.kind === 'energia').reduce((a, c) => a + c.usd, 0); return e > 0 ? Math.round(e * 100) / 100 : null; })(),
+    energyBandUsd: energyByBand(d),
   };
   let out: BillCalcInput;
   if (mode === 'profesional' && full) {
@@ -342,6 +354,20 @@ export function toCalculatorInput(d: BillData, mode: CalcMode): BillCalcInput | 
   if (d.creditsKwh) warnings.push(`Tu planilla muestra ${Math.round(d.creditsKwh)} kWh de créditos de energía: ya tienes generación propia; un asesor revisará tu caso.`);
   if (d.uncertain.length) warnings.push(`Revisa con atención: ${d.uncertain.join(', ')} (lectura con dudas).`);
   if (d.notes) warnings.push(`Nota de la lectura: ${d.notes}`);
+  return out;
+}
+
+/** Cargos de energía asignados a las franjas leídas (por el nombre u horario del rubro). null si alguno no se reconoce. */
+export function energyByBand(d: Pick<BillData, 'charges' | 'timeOfUse'>): Partial<Record<PeriodKey, number>> | null {
+  if (!d.timeOfUse) return null;
+  const energy = d.charges.filter((c) => c.kind === 'energia' && c.usd > 0);
+  if (energy.length < 2) return null;
+  const out: Partial<Record<PeriodKey, number>> = {};
+  for (const c of energy) {
+    const k = bandOf({ label: c.concept, hours: null }, d.timeOfUse.scheme === 'DIFERENCIADA_4');
+    if (!k || d.timeOfUse.kwh[k] == null) return null;
+    out[k] = Math.round(((out[k] ?? 0) + c.usd) * 100) / 100;
+  }
   return out;
 }
 

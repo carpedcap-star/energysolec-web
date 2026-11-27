@@ -121,3 +121,33 @@ describe('parámetros activos de Gerencia', () => {
     expect(hy.scenarios.base.capex.storage).toBeCloseTo(hy.battery!.nominalKwh * 380, 6);
   });
 });
+
+describe('retorno: clasificación comercial y búsqueda de una potencia mejor', () => {
+  it('clasificación por años', async () => {
+    const { paybackRating } = await import('./alternatives');
+    expect([2.9, 3, 3.1, 5, 5.1, 7, 7.1, null].map(paybackRating)).toEqual(['excelente', 'excelente', 'atractivo', 'atractivo', 'moderado', 'moderado', 'optimizar', 'optimizar']);
+  });
+  it('con retorno > 5 años se evalúan otras potencias con los mismos datos, sin forzar el resultado', () => {
+    const t = effectiveCostTariff({ category: CAT, kwh: 42676.8, serviceUsd: 3482.07, energyUsd: 2804, distributor: 'CNEL EP', province: 'Guayas', p: GERENCIA });
+    const r = runStudy(realInput({ energyChargesUsd: 2804, surfaces: [{ type: 'techo_metalico', areaM2: 250 }, { type: 'terreno', areaM2: 930 }] }), flat(1242), t, GERENCIA);
+    const on = r.alternatives!.find((a) => a.key === 'onGrid')!;
+    expect(on.modules).toBe(57 + 106);                    // 250 m² de techo y 930 m² de terreno
+    expect(r.paybackRating).toBe(paybackOf(on.summary!.paybackYears));
+    const o = r.paybackOptimization!;
+    expect(o.paybackYears).toBeLessThanOrEqual(on.summary!.paybackYears! + 1e-9);
+    expect(o.kwp).toBeLessThanOrEqual(on.kwp);
+    const tier = GERENCIA.pricing.pvTiers.find((x) => o.kwp <= x.upToKwp)!;
+    expect(o.investmentUsd).toBeCloseTo(Math.max(GERENCIA.pricing.minimumProjectUsd, o.kwp * tier.usdPerKwp) * 1.15, 0);
+  });
+  it('valoración por franjas: precio de la energía en las horas de sol con los cargos de cada franja', async () => {
+    const { solarHourPrice } = await import('../services/tariff-select');
+    const kwh = { lv_08_18: 29366.82, lv_18_22: 6334.2, base: 6975.78 };
+    const usd = { lv_08_18: 1800, lv_18_22: 600, base: 404 };
+    const p = solarHourPrice(kwh, usd)!;
+    // Las horas de sol caen en L-V 08-18 y en la base (fines de semana y 06-08): el precio queda entre ambos.
+    expect(p).toBeGreaterThan(404 / 6975.78);
+    expect(p).toBeLessThan(1800 / 29366.82);
+    expect(solarHourPrice(kwh, { lv_08_18: 1800 })).toBeNull();   // falta el precio de una franja con sol: no se inventa
+  });
+});
+const paybackOf = (y: number | null) => (y == null || y > 7 ? 'optimizar' : y > 5 ? 'moderado' : y > 3 ? 'atractivo' : 'excelente');

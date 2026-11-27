@@ -53,7 +53,8 @@ Next.js 15 App Router · TypeScript estricto · Tailwind 3 · Supabase (Postgres
    - Excedentes valen $0 salvo que `exportCompensation` esté configurado.
    - El cargo por demanda no se reduce por defecto.
    - La factura nunca llega a cero.
-   - Se adopta el recurso solar más bajo entre PVGIS-NSRDB (API v5_2), PVGIS-ERA5 (API v5_3) y NASA POWER.
+   - Recurso solar: PVGIS-NSRDB (API v5_2), PVGIS-ERA5 (API v5_3) y NASA POWER sobre la misma base (por kWp, sin pérdidas de sistema); se adopta la mediana de las tres, o la menor si Gerencia elige el criterio conservador (`technical.resourceSelection`). Con dos fuentes, la menor.
+   - Retorno simple = inversión total ÷ ahorro del año 1 frente a la facturación real; no descuenta mantenimiento.
 5. Leads (LOPDP):
    - El correo es obligatorio.
    - Privacidad y autorización comercial van **separadas**; el estudio se entrega sin exigir la autorización comercial.

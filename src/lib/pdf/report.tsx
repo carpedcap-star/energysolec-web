@@ -7,6 +7,7 @@ import type { Study } from '../data/types';
 import type { StudyInput } from '../engine/study';
 import { SITE } from '../site';
 import { summaryOf } from '@/components/calculator/alternatives';
+import { PAYBACK_RATING_LABEL, paybackRating } from '../engine/alternatives';
 import { fmtKwh, fmtKwp, fmtNum, fmtPct, fmtUsd, fmtYears, MONTHS_ES } from '../format';
 
 const Y = SITE.brand.yellow, G = SITE.brand.graphite, B = SITE.brand.blue;
@@ -104,6 +105,7 @@ function AlternativesTable({ r }: { r: Study['results'] }) {
     ['Factura mensual con el sistema', (a) => (a.key === 'offGrid' ? 'Sin conexión' : fmtUsd(summaryOf(a).residualMonthlyUsd))],
     ['Ahorro mensual / anual', (a) => `${fmtUsd(summaryOf(a).savingMonthlyUsd)} / ${fmtUsd(summaryOf(a).savingYearUsd)}`],
     ['Retorno simple (bruto)', (a) => fmtYears(summaryOf(a).paybackYears)],
+    ['Clasificación del retorno', (a) => PAYBACK_RATING_LABEL[paybackRating(summaryOf(a).paybackYears)]],
     ['VAN', (a) => fmtUsd(a.scenarios.base.npv)],
     ['TIR', (a) => (a.scenarios.base.irr == null ? 'n/d' : fmtPct(a.scenarios.base.irr))],
     ['Suministro / costo energía', (a) => (a.key === 'offGrid' ? `${a.reliability != null ? fmtPct(a.reliability) : '—'} · $${(a.costOfEnergyUsdPerKwh ?? 0).toFixed(3)}/kWh` : '—')],
@@ -190,8 +192,13 @@ function StudyDoc({ study, contact, company }: { study: Study; contact: ReportCo
           <View style={s.row}>
             <Kpi v={fmtUsd(onSum.investmentUsd)} l="Inversión (IVA incl.)" />
             <Kpi v={fmtUsd(onSum.savingYearUsd)} l="Ahorro anual" />
-            <Kpi v={fmtYears(onSum.paybackYears)} l="Retorno simple (bruto)" />
+            <Kpi v={fmtYears(onSum.paybackYears)} l={`Retorno simple (bruto) · ${PAYBACK_RATING_LABEL[paybackRating(onSum.paybackYears)]}`} />
           </View>
+          {r.paybackOptimization && (
+            <Text style={s.note}>{r.paybackOptimization.improves
+              ? `Optimización evaluada: con ${fmtKwp(r.paybackOptimization.kwp)} (${r.paybackOptimization.modules} paneles) el retorno simple sería ${fmtYears(r.paybackOptimization.paybackYears)} (inversión ${fmtUsd(r.paybackOptimization.investmentUsd)}, ahorro ${fmtUsd(r.paybackOptimization.savingMonthlyUsd)}/mes).`
+              : 'Optimización evaluada: ninguna otra potencia dentro del espacio y del consumo reduce el retorno simple con los precios y la tarifa actuales.'}</Text>
+          )}
         </>) : (
           <View style={s.row}>
             <Kpi v={fmtUsd(b.capex.total)} l="Inversión estimada (IVA incl.)" />

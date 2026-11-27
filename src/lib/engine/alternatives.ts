@@ -64,6 +64,28 @@ export type AlternativeSummary = {
   investmentUsd: number; paybackYears: number | null;
 };
 
+/** Clasificación comercial del retorno simple. */
+export type PaybackRating = 'excelente' | 'atractivo' | 'moderado' | 'optimizar';
+export const PAYBACK_RATING_LABEL: Record<PaybackRating, string> = {
+  excelente: 'Excelente', atractivo: 'Atractivo', moderado: 'Moderado', optimizar: 'Requiere optimización comercial y técnica',
+};
+export function paybackRating(years: number | null): PaybackRating {
+  if (years == null || years > 7) return 'optimizar';
+  if (years > 5) return 'moderado';
+  if (years > 3) return 'atractivo';
+  return 'excelente';
+}
+
+/** Año 1 de un sistema On Grid de `kwp` con los mismos datos del estudio: ahorro (factura del motor) e inversión. */
+export function onGridAt(i: AlternativesInput, kwp: number) {
+  const y = simulateYear(i, kwp, null);
+  const before = sum(y.before.map((b) => b.total)), after = sum(y.after.map((b) => b.total));
+  const ordered = [...i.surfaces].sort((a, b) => (i.p.technical.groundLast && a.type === 'terreno' ? 1 : 0) - (i.p.technical.groundLast && b.type === 'terreno' ? 1 : 0));
+  const per = ordered.map((x) => ({ type: x.type, areaM2: x.areaM2, maxKwp: x.areaM2 != null && x.areaM2 > 0 ? x.areaM2 / i.p.technical.mountingM2PerKwp[x.type] : null, usedKwp: 0 }));
+  const f = evaluateInvestment({ p: i.p, scenario: 'base', system: 'onGrid', kwp, batteryKwh: 0, mountingKwp: mountingSplit(i, kwp, per), year1: { saving: before - after, before, after, generationKwh: sum(y.flows.map((x) => x.pvKwh)) } });
+  return { before, after, saving: before - after, investment: f.capex.total };
+}
+
 export type SurfaceResult = {
   idealKwp: number; maxKwp: number | null; optimalKwp: number; recommendedKwp: number; areaKnown: boolean;
   /** En orden de uso (cubiertas y losas antes que el terreno si así lo configura Gerencia); `modules`, `usedKwp` y

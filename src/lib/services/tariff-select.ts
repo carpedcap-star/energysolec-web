@@ -1,5 +1,7 @@
 import { DISTRIBUTORS, SCHEDULE, distributorByCode, suggestDistributor, tariffByCode, type GroupCode } from '@/content/tarifas/pliego-2026';
 import type { CalcParams } from '../engine/params';
+import { periodOf, type PeriodKey, type PeriodScheme } from '../engine/tariff-v2';
+import { pvShape } from '../engine/energy';
 import type { SelectedTariff } from '../engine/study';
 
 /** Claves de tarifa que puede elegir (o que la planilla puede indicar) cada segmento. */
@@ -77,19 +79,47 @@ export function selectTariff(o: {
  * eléctrico completo ÷ kWh, y se advierte que puede sobrestimar el ahorro). El resto del servicio (demanda,
  * comercialización, otros) queda como cargo fijo que la generación solar no reduce. Nunca se asigna otra categoría.
  */
-export function effectiveCostTariff(o: { category: string; kwh: number; serviceUsd: number; energyUsd?: number | null; distributor?: string; province: string; city?: string; p: CalcParams }): SelectedTariff & { effective: { usdPerKwh: number; fixedUsd: number; fromBreakdown: boolean } } {
-  const fromBreakdown = !!(o.energyUsd && o.energyUsd > 0 && o.energyUsd <= o.serviceUsd);
-  const energy = fromBreakdown ? o.energyUsd! : o.serviceUsd;
-  const usdPerKwh = Math.round((energy / o.kwh) * 1e5) / 1e5;
+export function effectiveCostTariff(o: {
+  category: string; kwh: number; serviceUsd: number; energyUsd?: number | null; distributor?: string; province: string; city?: string; p: CalcParams;
+  bandKwh?: Partial<Record<PeriodKey, number>>; bandUsd?: Partial<Record<PeriodKey, number>>;
+}): SelectedTariff & { effective: { usdPerKwh: number; fixedUsd: number; fromBreakdown: boolean; solarHours: boolean } } {
+  const bandEnergy = o.bandUsd ? Object.values(o.bandUsd).reduce((a, b) => a + (b ?? 0), 0) : 0;
+  const energyUsd = o.energyUsd ?? (bandEnergy > 0 ? bandEnergy : null);
+  const fromBreakdown = !!(energyUsd && energyUsd > 0 && energyUsd <= o.serviceUsd);
+  const energy = fromBreakdown ? energyUsd! : o.serviceUsd;
+  // Con el precio de cada franja, la energía solar se valora con el precio de las horas en que se produce.
+  const solar = fromBreakdown && o.bandKwh && o.bandUsd ? solarHourPrice(o.bandKwh, o.bandUsd) : null;
+  const usdPerKwh = Math.round((solar ?? energy / o.kwh) * 1e5) / 1e5;
   const fixedUsd = Math.round((o.serviceUsd - energy) * 100) / 100;
   const dist = matchDistributor(o.distributor) ?? suggestDistributor(o.province, o.city);
   return {
     code: 'ESPECIAL', name: `${o.category} (tarifa especial, costo efectivo de tu planilla)`,
-    sourceNote: `Costo efectivo leído de tu planilla: $${usdPerKwh.toFixed(4)} por kWh de energía${fixedUsd > 0 ? ` y $${fixedUsd.toFixed(2)} al mes de cargos que no dependen de la energía (demanda, comercialización, otros)` : ''}. La categoría no está transcrita en el motor tarifario.`,
+    sourceNote: `Costo efectivo leído de tu planilla: $${usdPerKwh.toFixed(4)} por kWh de energía${solar != null ? ' en las horas de sol (promedio de las franjas ponderado por la producción solar)' : ''}${fixedUsd > 0 ? ` y $${fixedUsd.toFixed(2)} al mes de cargos que no dependen de la energía (demanda, comercialización, otros)` : ''}. La categoría no está transcrita en el motor tarifario.`,
     isPlaceholder: true,
     structure: { scheme: 'UNICO', commercialization: { usdPerMonth: fixedUsd }, energy: [{ period: 'unico', blocks: [{ fromKwh: 0, toKwh: null, usdPerKwh }] }] },
     distributor: dist ? { code: dist.code, name: dist.name, suggested: !matchDistributor(o.distributor) } : null,
     assumed: false,
-    effective: { usdPerKwh, fixedUsd, fromBreakdown },
+    effective: { usdPerKwh, fixedUsd, fromBreakdown, solarHours: solar != null },
   };
+}
+
+/**
+ * Precio de la energía en las horas de sol: el de cada franja (cargo ÷ kWh) ponderado por la producción solar que cae en
+ * ella (perfil solar horario, 22 días laborables y 8 de fin de semana). null si falta el precio de una franja con sol.
+ */
+export function solarHourPrice(bandKwh: Partial<Record<PeriodKey, number>>, bandUsd: Partial<Record<PeriodKey, number>>): number | null {
+  const keys = Object.keys(bandKwh) as PeriodKey[];
+  const scheme: PeriodScheme = keys.some((k) => k === 'h08_22' || k === 'h22_08') ? 'HORARIA_2' : 'DIFERENCIADA_4';
+  const pv = pvShape();
+  const share: Partial<Record<PeriodKey, number>> = {};
+  for (const [day, n] of [['laborable', 22], ['sabado', 4], ['domingo', 4]] as const)
+    for (let h = 0; h < 24; h++) if (pv[h] > 0) { const k = periodOf(scheme, day, h); share[k] = (share[k] ?? 0) + pv[h] * n; }
+  const tot = Object.values(share).reduce((a, b) => a + (b ?? 0), 0);
+  let price = 0;
+  for (const [k, w] of Object.entries(share) as [PeriodKey, number][]) {
+    const kwh = bandKwh[k], usd = bandUsd[k];
+    if (!kwh || usd == null) return null;
+    price += (w / tot) * (usd / kwh);
+  }
+  return price;
 }

@@ -1,5 +1,5 @@
 import type { StudyResult } from '@/lib/engine/study';
-import type { Alternative, AlternativeSummary } from '@/lib/engine/alternatives';
+import { PAYBACK_RATING_LABEL, paybackRating, type Alternative, type AlternativeSummary } from '@/lib/engine/alternatives';
 import { fmtKwp, fmtNum, fmtUsd, fmtYears } from '@/lib/format';
 
 /** Resumen comercial de una alternativa; los estudios anteriores (sin `summary`) se resumen con la factura del motor. */
@@ -30,13 +30,18 @@ export function AlternativesComparison({ r }: { r: StudyResult }) {
               <Big l="Potencia recomendada" v={fmtKwp(rec.kwp)} />
               <Big l="Paneles" v={String(rec.modules)} />
               <Big l="Inversión (IVA incl.)" v={fmtUsd(s.investmentUsd)} />
-              <Big l="Retorno simple" v={fmtYears(s.paybackYears)} accent />
+              <Big l="Retorno simple" v={fmtYears(s.paybackYears)} accent sub={PAYBACK_RATING_LABEL[paybackRating(s.paybackYears)]} />
               <Big l="Ahorro mensual" v={fmtUsd(s.savingMonthlyUsd)} accent />
               <Big l="Ahorro anual" v={fmtUsd(s.savingYearUsd)} accent />
               <Big l="Factura estimada después" v={rec.key === 'offGrid' ? 'Sin planilla' : `${fmtUsd(s.residualMonthlyUsd)}/mes`} />
               <Big l="Hoy pagas" v={`${fmtUsd(s.currentMonthlyUsd)}/mes`} />
             </div>
           </div>
+          {r.paybackOptimization?.improves && (
+            <p className="border-b border-line bg-amber-50 px-5 py-3 text-sm text-amber-950 sm:px-6">
+              Con {fmtKwp(r.paybackOptimization.kwp)} ({r.paybackOptimization.modules} paneles) el retorno bajaría a {fmtYears(r.paybackOptimization.paybackYears)}: inversión {fmtUsd(r.paybackOptimization.investmentUsd)} y ahorro de {fmtUsd(r.paybackOptimization.savingMonthlyUsd)} al mes. Tu asesor puede ajustar la propuesta.
+            </p>
+          )}
           <p className="px-5 py-3 text-xs text-muted sm:px-6">Lo que pagas hoy: {SOURCE[r.billing?.source ?? 'estimada']}. Retorno simple = inversión ÷ ahorro anual, sin descontar mantenimiento; el ahorro no incluye los cargos que seguirás pagando.</p>
         </div>
       )}
@@ -60,7 +65,7 @@ export function AlternativesComparison({ r }: { r: StudyResult }) {
                   <Row k="Ahorro mensual" v={fmtUsd(x.savingMonthlyUsd)} strong />
                   <Row k="Ahorro anual" v={fmtUsd(x.savingYearUsd)} />
                   <Row k="Factura después" v={a.key === 'offGrid' ? 'Sin planilla eléctrica' : `${fmtUsd(x.residualMonthlyUsd)}/mes`} />
-                  <Row k="Retorno simple" v={fmtYears(x.paybackYears)} strong />
+                  <Row k="Retorno simple" v={`${fmtYears(x.paybackYears)} · ${PAYBACK_RATING_LABEL[paybackRating(x.paybackYears)]}`} strong />
                 </dl>
               )}
             </article>
@@ -72,8 +77,8 @@ export function AlternativesComparison({ r }: { r: StudyResult }) {
   );
 }
 
-const Big = ({ l, v, accent }: { l: string; v: string; accent?: boolean }) => (
-  <div className="min-w-0"><p className="text-xs text-white/60">{l}</p><p className={`font-display mt-1 text-xl font-extrabold tabular-nums [overflow-wrap:anywhere] sm:text-2xl ${accent ? 'text-brand' : ''}`}>{v}</p></div>
+const Big = ({ l, v, accent, sub }: { l: string; v: string; accent?: boolean; sub?: string }) => (
+  <div className="min-w-0"><p className="text-xs text-white/60">{l}</p><p className={`font-display mt-1 text-xl font-extrabold tabular-nums [overflow-wrap:anywhere] sm:text-2xl ${accent ? 'text-brand' : ''}`}>{v}</p>{sub && <p className="mt-0.5 text-xs text-white/70">{sub}</p>}</div>
 );
 const Row = ({ k, v, strong }: { k: string; v: string; strong?: boolean }) => (
   <div className="flex min-w-0 justify-between gap-3 border-b border-line/70 pb-1"><dt className="text-muted">{k}</dt><dd className={`min-w-0 text-right tabular-nums [overflow-wrap:anywhere] ${strong ? 'font-semibold' : 'font-medium'}`}>{v}</dd></div>

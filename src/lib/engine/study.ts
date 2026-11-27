@@ -3,7 +3,7 @@ import type { CalcParams } from './params';
 import { systemLossFactor, type SolarResource, type SizingResult, round } from './solar';
 import type { FinanceResult } from './finance';
 import type { Tariff } from './tariff';
-import { computeAlternatives, type Alternative, type AlternativeKey, type SurfaceResult } from './alternatives';
+import { computeAlternatives, onGridAt, paybackRating, type Alternative, type AlternativeKey, type AlternativesInput, type PaybackRating, type SurfaceResult } from './alternatives';
 import { computeBill, SCHEME_PERIODS, type BillLine, type BillOptions, type PeriodKey, type TariffStructure } from './tariff-v2';
 import { loadShape, nightShare, DEFAULT_PEAK } from './energy';
 
@@ -51,6 +51,8 @@ export const StudyInput = z.object({
   specialTariff: z.string().max(80).optional(),
   serviceUsd: z.number().positive().max(5_000_000).optional(),
   energyChargesUsd: z.number().positive().max(5_000_000).optional(),
+  /** Cargos de energía por franja (USD) leídos de la planilla; con `periodKwh` dan el precio de cada franja. */
+  energyBandUsd: z.record(z.string(), z.number().nonnegative()).optional(),
 }).refine((v) => v.monthlyKwh || v.monthlyBillUsd || v.monthlyHistoryKwh, { message: 'Indica tu consumo en kWh o el valor de tu factura.' });
 export type StudyInput = z.infer<typeof StudyInput>;
 
@@ -97,6 +99,10 @@ export type StudyResult = {
   billing?: { currentMonthlyUsd: number; source: 'planillas_12' | 'planilla' | 'declarada' | 'estimada' };
   /** Limitaciones que el cliente debe ver siempre (las demás advertencias van plegadas). */
   criticalWarnings?: string[];
+  /** Clasificación comercial del retorno de la alternativa recomendada. */
+  paybackRating?: PaybackRating;
+  /** Si el retorno supera 5 años: la potencia On Grid (dentro del espacio y del consumo) con el menor retorno simple. */
+  paybackOptimization?: { kwp: number; modules: number; investmentUsd: number; savingMonthlyUsd: number; residualMonthlyUsd: number; paybackYears: number; improves: boolean } | null;
   warnings: string[];
   disclaimer: string;
 };
@@ -151,11 +157,12 @@ export function runStudy(input: StudyInput, resource: SolarResource & { candidat
   if (rawShares && !fits && s.scheme !== 'UNICO')
     warnings.push(`Las franjas horarias de tu planilla (${Object.keys(rawShares).length}) no coinciden con las de la tarifa ${tariff.name}: repartimos tu consumo con un perfil tipo. Confirma tu categoría tarifaria con tu asesor.`);
 
-  const alt = computeAlternatives({
+  const altInput: AlternativesInput = {
     segment: input.segment, monthlyKwh: monthly, peakHours, periodShares, demandKw, yieldPerKwp,
     tariff: { structure: s, options: tariff.options }, surfaces, backup, backupHours: input.backupHours || undefined,
     objective: input.objective, p,
-  });
+  };
+  const alt = computeAlternatives(altInput);
   const on = alt.alternatives.find((a) => a.key === 'onGrid')!;
   const genYear = on.annualGenerationKwh;
   const annual = monthly.reduce((a, b) => a + b, 0);
@@ -211,6 +218,28 @@ export function runStudy(input: StudyInput, resource: SolarResource & { candidat
   if (billing.source === 'planilla') warnings.push('El ahorro y el retorno toman como referencia el valor de una sola planilla: es una estimación preliminar. Con 12 meses facturados el resultado es más preciso.');
   if (billing.source === 'estimada') warnings.push('No tenemos el valor de tu factura: lo que pagas hoy se estimó con la tarifa oficial y tu consumo.');
   const rec = alt.alternatives.find((a) => a.key === alt.recommended);
+  // Retorno mayor a 5 años: se busca, con los mismos datos, la potencia On Grid de menor retorno simple entre un panel y
+  // el máximo que permiten el espacio y el consumo (incluidos los cambios de tramo de precio). No se fuerza ningún valor.
+  let paybackOptimization: StudyResult['paybackOptimization'] = null;
+  const recPb = rec?.summary?.paybackYears ?? null;
+  if (rec && (recPb == null || recPb > 5)) {
+    const moduleKw = p.technical.moduleWp / 1000;
+    const maxMods = Math.max(1, Math.round(Math.max(rec.kwp, on.kwp) / moduleKw));
+    const sizes = new Set<number>([maxMods]);
+    for (let k = 1; k <= 20; k++) sizes.add(Math.max(1, Math.round((maxMods * k) / 20)));
+    for (const t of p.pricing.pvTiers) { const m = Math.floor(t.upToKwp / moduleKw); if (m >= 1 && m <= maxMods) { sizes.add(m); if (m + 1 <= maxMods) sizes.add(m + 1); } }
+    const cur = billing.currentMonthlyUsd;
+    for (const n of sizes) {
+      const kw = round(n * moduleKw, 2);
+      const g = onGridAt(altInput, kw);
+      const residual = Math.max(g.after / 12, cur - g.saving / 12), saving = cur - residual;
+      if (!(saving > 0)) continue;
+      const pb = g.investment / (saving * 12);
+      if (!paybackOptimization || pb < paybackOptimization.paybackYears - 1e-9)
+        paybackOptimization = { kwp: kw, modules: n, investmentUsd: r2(g.investment), savingMonthlyUsd: r2(saving), residualMonthlyUsd: r2(residual), paybackYears: round(pb, 1), improves: false };
+    }
+    if (paybackOptimization) paybackOptimization.improves = recPb == null || paybackOptimization.paybackYears < recPb - 0.05;
+  }
   if (rec?.summary && (rec.summary.paybackYears == null || rec.summary.paybackYears > p.financial.lifetimeYears))
     critical.push(`Con los precios y la tarifa actuales, la alternativa recomendada no recupera la inversión dentro de la vida útil de ${p.financial.lifetimeYears} años.`);
   if (tariff.code === 'ESPECIAL') {
@@ -234,6 +263,7 @@ export function runStudy(input: StudyInput, resource: SolarResource & { candidat
     billLines: s.scheme === 'UNICO' ? billLines : undefined,
     surfaces: alt.surfaces, alternatives: alt.alternatives, recommended: alt.recommended, engine: 2,
     paramsVersion: p.version, paramsPlaceholder: p.isPlaceholder, billing, criticalWarnings: critical, warnings,
+    paybackRating: rec?.summary ? paybackRating(rec.summary.paybackYears) : undefined, paybackOptimization,
     disclaimer: 'Este estudio constituye una prefactibilidad técnica y económica referencial. No es una oferta ni una cotización formal: está sujeto a inspección en sitio, ingeniería definitiva, verificación regulatoria y cotización de Energy Solutions Ecuador S.A.S.',
   };
 }

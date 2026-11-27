@@ -74,6 +74,7 @@ export const PARAM_SECTIONS: ParamSection[] = [
     id: 'perdidas', title: 'Pérdidas, degradación y rendimiento',
     intro: 'Las pérdidas se aplican una sola vez: las fuentes de irradiación se consultan sin pérdidas (loss=0).',
     fields: [
+      { path: 'technical.resourceSelection', label: 'Radiación solar adoptada', kind: 'enum', options: [['mediana', 'Mediana de PVGIS-NSRDB, PVGIS-ERA5 y NASA POWER'], ['minimo', 'La menor de las tres (conservador)']], hint: 'Las tres se piden sobre la misma base (por kWp, plano inclinado, sin pérdidas de sistema). La mediana descarta el valor más alto y el más bajo.' },
       pct('technical.soilingLoss', 'Suciedad'), pct('technical.dcWiringMismatchLoss', 'Cableado CC y desajuste'), pct('technical.acWiringLoss', 'Cableado CA'),
       pct('technical.inverterEfficiency', 'Eficiencia del inversor'), pct('technical.availability', 'Disponibilidad'),
       pct('technical.shadingLoss.none', 'Sombreado: ninguno'), pct('technical.shadingLoss.partial', 'Sombreado: parcial'), pct('technical.shadingLoss.significant', 'Sombreado: significativo'),

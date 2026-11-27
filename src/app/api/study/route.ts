@@ -1,4 +1,5 @@
 import { StudyInput } from '@/lib/engine/study';
+import type { PeriodKey } from '@/lib/engine/tariff-v2';
 import type { StudyInput as StudyInputT } from '@/lib/engine/study';
 import { runStudy } from '@/lib/engine/study';
 import { getSolarResource } from '@/lib/engine/resource';
@@ -40,6 +41,7 @@ async function calculate(input: StudyInputT, body: unknown) {
   // Pliego oficial ARCONEL por distribuidora (de la planilla o sugerida por ubicación) y categoría.
   const tariff = input.specialTariff ? effectiveCostTariff({
     category: input.specialTariff, kwh: input.monthlyKwh ?? monthlyRef!, serviceUsd: input.serviceUsd!, energyUsd: input.energyChargesUsd,
+    bandKwh: input.periodKwh as Partial<Record<PeriodKey, number>> | undefined, bandUsd: input.energyBandUsd as Partial<Record<PeriodKey, number>> | undefined,
     distributor: input.distributor, province: input.province, city: input.city, p: params,
   }) : selectTariff({
     segment: input.segment, province: input.province, city: input.city, distributor: input.distributor, tariffKey: input.tariffCode,
